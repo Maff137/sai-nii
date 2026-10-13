@@ -57,3 +57,17 @@ On a user-initiated question, Sai-nii may include two extra files that are linke
 Unit tests for import ranking can run without VS Code, but final compilation (`npm test`) and Extension Host integration tests (`npm run test:integration`) must be validated on the target machine. To inspect actual behavior, open a workspace with two linked source files and ask Sai-nii about the import; avoid using personal or confidential repositories for first-run tests.
 
 Current limitations: heuristic imports rather than language-server dependency graph, a finite workspace listing, and a short context window. The model may still misunderstand relationships; do not treat generated explanations as verified code analysis.
+
+## v0.2.0 — Architecture questions directly from the project root
+
+Open a **trusted folder** in the Extension Development Host. An active source editor is no longer necessary to ask an architecture question. Press **Arquitetura do projeto**, or type e.g. “Por que os arquivos do código são organizados do jeito que estão?”. Sai-nii enumerates up to 750 workspace entries, assembles a bounded tree and reads short excerpts from conventional READMEs, build manifests and entry points (up to four files). Each candidate is size-limited, checked against the real workspace location, and never executed. Sensitive filenames, generated directories and binaries are excluded heuristically; it is not a content-aware secret detector.
+
+Architecture answers distinguish confirmed files from tentative architectural conventions. Their structured `observation` can be longer than ordinary conversational hints, with a question only when useful. The fallback does not invent framework choices if the model fails. The language-neutral tree is not a deep semantic parser. Actual depth of expertise depends on the local model and language, and the answer may be incorrect for unfamiliar ecosystems.
+
+Use `npm test` then `npm run test:integration` to test a temporary Python fixture automatically. Unlike the earlier smoke test, this verifies a root-only architecture snapshot and does not need the llama-server. To evaluate explanation quality, run the model and ask a natural-language architecture question in a real local project. The integration test does not measure LLM reasoning.
+
+## v0.2.5 — Local conversation diagnostics
+
+For an unsuccessful conceptual reply, open VS Code **Output** and select **Sai-nii: diagnóstico**. It reports categories such as `too_short`, `echo_question`, `repeat_answer`, or `json`, along with whether a reply came from `model`, `retry`, or `fallback`. The diagnostic output contains no raw prompts or answers.
+
+To test informal questions, keep the workspace root open; code excerpts and symbols in backticks are not normalized. The conversation engine interprets common abbreviations as optional context and falls back transparently if the model fails twice.

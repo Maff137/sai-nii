@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
 /** Only local loopback is reachable; no arbitrary URL/API key can be configured. */
-export async function complete(messages: ChatMessage[], unlocked = false, requireHint = false): Promise<string> {
+export async function complete(messages: ChatMessage[], unlocked = false, requireHint = false, architecture = false): Promise<string> {
   const config = vscode.workspace.getConfiguration('sainii');
   const port = config.get<number>('serverPort', 8080);
   const model = config.get<string>('model', 'local');
@@ -19,16 +19,16 @@ export async function complete(messages: ChatMessage[], unlocked = false, requir
         model,
         messages,
         temperature: 0.2,
-        max_tokens: unlocked ? 900 : 380,
+        max_tokens: unlocked ? 900 : architecture ? 600 : 380,
         stream: false,
-        ...(unlocked ? {} : {
+        ...(unlocked || architecture ? {} : {
           // llama.cpp's JSON grammar prevents plain-text replies from reaching the parser.
           response_format: {
             type: 'json_object',
             schema: {
               type: 'object',
               properties: {
-                observation: { type: 'string', minLength: 1, maxLength: 230 },
+                observation: { type: 'string', minLength: 1, maxLength: architecture ? 1500 : 230 },
                 question: { type: 'string', maxLength: 180 },
                 hint: { type: 'string', maxLength: 230, ...(requireHint ? { minLength: 1 } : {}) }
               },

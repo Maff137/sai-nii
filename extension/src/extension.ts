@@ -1,10 +1,14 @@
 import * as vscode from 'vscode';
+import * as path from 'node:path';
 import { snapshot } from './context';
 import { complete, ChatMessage } from './model';
-import { createHtml } from './webview';
+import { createHtml, assistantBlocks } from './webview';
 import { LearnerMemory, projectIdentity } from './memory';
 import { learningKind } from './learning';
 import { GUIDANCE_SYSTEM, SOLUTION_SYSTEM, guidanceText, releaseAllowed, SolutionRequest, planGuidance, GuidanceProgress } from './pedagogy';
+import { architectureIntent } from './architecture';
+import { DISCUSSION_SYSTEM, projectStructureQuestion, resolveDiscussion } from './discussion';
+import { informalInterpretation } from './informal';
 import { resolveGuidance } from './recovery';
 
 class SaiNiiView implements vscode.WebviewViewProvider {
@@ -14,9 +18,11 @@ class SaiNiiView implements vscode.WebviewViewProvider {
   private history = new Map<string, ChatMessage[]>();
   private progress = new Map<string, GuidanceProgress>();
   private memory: LearnerMemory;
+  private readonly diagnosticOutput = vscode.window.createOutputChannel('Sai-nii: diagnóstico');
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.memory = new LearnerMemory(context.globalState);
+    context.subscriptions.push(this.diagnosticOutput);
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -31,6 +37,9 @@ class SaiNiiView implements vscode.WebviewViewProvider {
           break;
         case 'analyze':
           await this.ask('Quero entender o trecho selecionado ou arquivo aberto.', false);
+          break;
+        case 'architecture':
+          await this.ask('Explique a arquitetura e a organização das pastas e arquivos deste projeto, as responsabilidades e a relação entre as partes.', false);
           break;
         case 'requestSolution':
           if (typeof message.attempt === 'string' && typeof message.blocker === 'string') {
@@ -72,37 +81,61 @@ class SaiNiiView implements vscode.WebviewViewProvider {
     this.send('busy', { value: true });
     try {
       await this.memory.initialize();
-      const editorKey = vscode.window.activeTextEditor?.document.uri.toString() ?? '';
-      const relevantHistory = this.history.get(editorKey) ?? [];
-      const recentFocus = relevantHistory.slice(-4).map(item => item.content).join(' ');
-      const current = await snapshot(`${text} ${recentFocus}`);
+      const workspace = this.currentWorkspace();
+      const currentEditor = vscode.window.activeTextEditor;
+      const overviewRequested = architectureIntent(text) || !currentEditor;
+      const guessedRelative = workspace && currentEditor && !overviewRequested
+        ? path.relative(vscode.workspace.getWorkspaceFolder(currentEditor.document.uri)?.uri.fsPath ?? '', currentEditor.document.uri.fsPath).replaceAll('\\', '/')
+        : '(raiz)';
+      const guessedKey = `${workspace?.id ?? ''}::${guessedRelative}`;
+      const historical = this.history.get(guessedKey) ?? [];
+      const recentFocus = historical.slice(-4).map(item => item.content).join(' ');
+      const current = await snapshot(`${text} ${recentFocus}`, text);
       if (!current) {
-        this.send('error', { text: 'Abra um arquivo de código dentro de uma pasta de projeto confiável. Arquivos de segredos e pastas geradas não são lidos.' });
+        this.send('error', { text: 'Abra uma pasta de projeto confiável no VS Code. Arquivos sensíveis ou gerados não serão lidos.' });
         return;
       }
-      const system = unlock ? SOLUTION_SYSTEM : GUIDANCE_SYSTEM;
+      const historyKey = `${current.projectId}::${current.file}`;
+      const relevantHistory = this.history.get(historyKey) ?? historical;
+      const isArchitecture = current.file === '(raiz)';
+      const system = unlock ? SOLUTION_SYSTEM : isArchitecture ? DISCUSSION_SYSTEM : GUIDANCE_SYSTEM;
       const progressKey = `${current.projectId}::${current.file}`;
       const previous = this.progress.get(progressKey);
-      const plan = unlock ? null : planGuidance(text, previous);
+      const plan = unlock || isArchitecture ? null : planGuidance(text, previous);
       const memorySummary = this.memory.modelContext(current.projectId, current.project);
       const contextualPrompt = [
         `Histórico pedagógico local, resumido (não contém código nem notas escolares):\n${memorySummary}`,
         `<contexto_nao_confiavel>\n${current.content}\n</contexto_nao_confiavel>`,
         evidence ? `Tentativa relatada: ${evidence.attempt.slice(0, 1200)}\nBloqueio relatado: ${evidence.blocker.slice(0, 1200)}` : '',
         `PEDIDO ATUAL DO ALUNO (PRIORIDADE): ${text.slice(0, 1800)}`,
+        isArchitecture ? informalInterpretation(text) : '',
         plan?.instruction ?? ''
       ].filter(Boolean).join('\n\n');
-      const messages: ChatMessage[] = [{ role: 'system', content: system }, ...relevantHistory.slice(-6), { role: 'user', content: contextualPrompt }];
+      const priorTurns: ChatMessage[] = isArchitecture
+        ? relevantHistory.slice(-4).map(item => ({ role: item.role, content: item.content.slice(0, 1050) }))
+        : relevantHistory.slice(-6);
+      const messages: ChatMessage[] = [{ role: 'system', content: system }, ...priorTurns, { role: 'user', content: contextualPrompt }];
       let answer: string;
       let origin: 'model' | 'retry' | 'fallback' | 'solution' = 'solution';
       if (unlock) {
         answer = (await complete(messages, true)).trim().slice(0, 7000);
+      } else if (isArchitecture) {
+        const outcome = await resolveDiscussion({
+          generate: requestMessages => complete(requestMessages, false, false, true),
+          messages, observedPaths: current.architecturePaths ?? [], learnerText: text,
+          structuralQuestion: projectStructureQuestion(text),
+          onDiagnostic: (attempt, reason) => this.diagnosticOutput.appendLine(`Resposta conceitual rejeitada: tentativa ${attempt}; motivo=${reason}`),
+          previousAnswer: [...relevantHistory].reverse().find(item => item.role === 'assistant')?.content
+        });
+        answer = outcome.text;
+        origin = outcome.origin;
+        this.diagnosticOutput.appendLine(`Conversa conceitual: origem=${origin}; pergunta_de_estrutura=${projectStructureQuestion(text)}`);
       } else {
         const outcome = await resolveGuidance({
           messages,
-          generate: requestMessages => complete(requestMessages, false, Boolean(plan!.needsHelp)),
+          generate: requestMessages => complete(requestMessages, false, Boolean(plan!.needsHelp), isArchitecture),
           plan: plan!, previous, sourceContext: current.content,
-          learnerText: text, topicContext: recentFocus
+          learnerText: text, topicContext: recentFocus, observationLimit: isArchitecture ? 1500 : 230
         });
         origin = outcome.origin;
         const guidance = outcome.guide;
@@ -120,8 +153,10 @@ class SaiNiiView implements vscode.WebviewViewProvider {
         { role: 'user', content: text.slice(0, 1800) },
         { role: 'assistant', content: answer }
       ];
-      this.history.set(editorKey, nextHistory.slice(-12));
-      this.send('assistant', { text: answer });
+      // Do not teach the local model to imitate a generic recovery/error text.
+      // The webview retains the user's visible turn; the model history excludes it.
+      if (origin !== 'fallback' || !isArchitecture) this.history.set(historyKey, nextHistory.slice(-12));
+      this.send('assistant', { text: answer, blocks: assistantBlocks(answer) });
       // A storage error must not replace an otherwise successful pedagogical answer.
       try {
         await this.memory.record({
@@ -169,9 +204,7 @@ class SaiNiiView implements vscode.WebviewViewProvider {
     // Active session state belongs to project files. Clear it together with the project history.
     this.progress.forEach((_value, key) => { if (key.startsWith(`${workspace.id}::`)) this.progress.delete(key); });
     for (const key of this.history.keys()) {
-      const folder = vscode.workspace.workspaceFolders?.find(f =>
-        f.uri.scheme === 'file' && projectIdentity(f.uri.fsPath) === workspace.id);
-      if (folder && key.startsWith(`${folder.uri.toString()}/`)) this.history.delete(key);
+      if (key.startsWith(`${workspace.id}::`)) this.history.delete(key);
     }
     this.send('memory', { text: `Memória do projeto ${workspace.name} apagada.` });
   }

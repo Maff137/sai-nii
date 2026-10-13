@@ -74,3 +74,13 @@ test('a short explanation or confirmation does not require a question', () => {
   assert.match(GUIDANCE_SYSTEM, /Perguntas socráticas são um RECURSO/);
   assert.match(planGuidance('O que significa callback?').instruction, /NÃO são obrigatórias/);
 });
+
+
+test('architecture explanations can be longer without enabling unrestricted code generation', () => {
+  const { parseGuidance } = require('../dist/pedagogy');
+  const content = 'As pastas observadas separam responsabilidades. '.repeat(20);
+  const data = JSON.stringify({ observation: content, hint: '', question: '' });
+  assert.equal(parseGuidance(data, false).observation.length, 230);
+  assert.equal(parseGuidance(data, false, 1500).observation, content.trim());
+  assert.equal(parseGuidance(JSON.stringify({observation:'function hack() {}',question:'',hint:''}), false, 1500), null);
+});

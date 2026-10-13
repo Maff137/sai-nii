@@ -119,3 +119,12 @@ test('records whether model, retry or fallback produced the guidance', async () 
   const fallback = await resolveGuidance({...inputs, generate:async () => 'invalid'});
   assert.equal(fallback.origin,'fallback');
 });
+
+
+test('architecture rescue admits uncertainty instead of pretending it knows the design', () => {
+  const { rescueGuidance } = require('../dist/recovery');
+  const result = rescueGuidance('Estrutura observada: src/main.py', 'Explique a arquitetura do projeto',
+    { needsHelp: false, helpLevel: 0, instruction: '' });
+  assert.match(result.observation, /não vou inventar responsabilidades/i);
+  assert.doesNotMatch(result.observation, /MVC|Clean Architecture|Microserviços/);
+});

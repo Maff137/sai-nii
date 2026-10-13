@@ -12,3 +12,10 @@
 ## Validation boundaries
 
 Pure unit tests cover policy behavior, retrieval of summarized memory, upgrade from the older format, workspace isolation, and response-origin tracking. One GUI Extension Host smoke test was added but cannot be claimed validated until run with VS Code. Small local-model behavior must be tested in the actual machine before the milestone is called fully validated.
+
+## Architecture behavior (v0.2.0)
+
+- The tutor must respond to architecture and folder-organization questions with only the project root open in VS Code; do not demand screenshots or copied directory trees.
+- Represent actual observed paths and small documentation/entry-point excerpts as evidence. Differentiate likely convention from verified architecture; do not guess historical design motivations.
+- Indexing is independent of file extension and should remain open to any programming language. Expert-quality guidance for *every* language is an aspiration, NOT a current guarantee: the quality of the selected local LLM and context parser varies by language and framework.
+- Context is user-invoked, read-only, bounded, restricted to trusted workspace and the local model. Multi-root selection currently uses the editor's workspace when possible and otherwise the first root; explicit root selection remains future work.

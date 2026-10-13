@@ -7,6 +7,8 @@ import { bounded } from './pedagogy';
 import { focusedSource } from './focus';
 import { projectIdentity } from './memory';
 import { rankRelatedFiles, likelyTextFile, withinRoot } from './related';
+import { architectureIntent, architectureOutline, architectureEvidence } from './architecture';
+import { projectStructureQuestion } from './discussion';
 
 const execFileAsync = promisify(execFile);
 const FOLDER_EXCLUDE = new Set(['.git', '.ssh', '.aws', '.azure', '.gnupg', 'node_modules', '.venv', 'venv', 'dist', 'build', 'coverage', '.next', '__pycache__', '.idea', '.vscode-test']);
@@ -14,7 +16,7 @@ const FOLDER_EXCLUDE = new Set(['.git', '.ssh', '.aws', '.azure', '.gnupg', 'nod
 export function allowedRelativePath(name: string): boolean {
   const p = name.replaceAll('\\', '/');
   const parts = p.split('/');
-  if (parts.some(part => FOLDER_EXCLUDE.has(part.toLowerCase()))) return false;
+  if (parts.some(part => !part || part === '.' || part === '..' || /[\0\r\n]/.test(part) || FOLDER_EXCLUDE.has(part.toLowerCase()) || /^\.env(?:\..*)?$/i.test(part) || /^(?:secrets?|credentials?)$/i.test(part))) return false;
   const leaf = parts.at(-1)?.toLowerCase() ?? '';
   if (/^\.env(?:\..+)?$/.test(leaf) || /\.((?:key|pem|p12|pfx|crt|cert))$/.test(leaf)) return false;
   if (/(?:secrets?|credentials?|id_rsa|id_ed25519|tokens?)(?:[._-]|$)/.test(leaf)) return false;
@@ -35,17 +37,61 @@ async function git(root: string, args: string[]): Promise<string> {
   }
 }
 
-export type Snapshot = { project: string; projectId: string; file: string; language: string; content: string };
+export type Snapshot = { project: string; projectId: string; file: string; language: string; content: string; architecturePaths?: string[] };
 
-/** Read-only, bounded editor snapshot. Never reads .env/keys or generated directories. */
-export async function snapshot(learnerContext = ''): Promise<Snapshot | null> {
+/**
+ * A trusted project folder alone is sufficient for architecture questions.
+ * The active editor is optional; nothing is scanned until the learner asks.
+ */
+export async function snapshot(learnerContext = '', currentQuestion = learnerContext): Promise<Snapshot | null> {
   if (!vscode.workspace.isTrusted) return null;
-  const editor = vscode.window.activeTextEditor;
-  if (!editor || editor.document.uri.scheme !== 'file') return null;
-  const folder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
+  const candidate = vscode.window.activeTextEditor;
+  const selectedFolder = candidate ? vscode.workspace.getWorkspaceFolder(candidate.document.uri) : undefined;
+  const folder = selectedFolder ?? vscode.workspace.workspaceFolders?.[0];
   if (!folder || folder.uri.scheme !== 'file') return null;
-  const rel = path.relative(folder.uri.fsPath, editor.document.uri.fsPath).replaceAll('\\', '/');
-  if (!allowedRelativePath(rel)) return null;
+  const rawFile = candidate?.document.uri.scheme === 'file' && selectedFolder?.uri.toString() === folder.uri.toString()
+    ? candidate : undefined;
+  const relative = rawFile
+    ? path.relative(folder.uri.fsPath, rawFile.document.uri.fsPath).replaceAll('\\', '/')
+    : '';
+  const editor = relative && allowedRelativePath(relative) ? rawFile : undefined;
+  // A restricted editor is never read, even when the learner asks about the workspace.
+  if (rawFile && !editor && !architectureIntent(currentQuestion)) return null;
+  const archMode = architectureIntent(currentQuestion) || !editor;
+  const structureAsked = projectStructureQuestion(currentQuestion);
+
+  // A general programming question does not need a repository scan or hundreds
+  // of file paths. The model gets this limited context only when relevant.
+  if (archMode && !structureAsked) {
+    return {
+      project: folder.name, projectId: projectIdentity(folder.uri.fsPath),
+      file: '(raiz)', language: 'multilanguage', architecturePaths: [],
+      content: `Projeto aberto: ${folder.name}. Dúvida conceitual: use somente o pedido e a conversa anterior; não presuma que o aluno perguntou sobre a árvore de diretórios.`
+    };
+  }
+
+  const nearby = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, '**/*'),
+    '{**/.git/**,**/node_modules/**,**/.venv/**,**/venv/**,**/dist/**,**/build/**,**/coverage/**,**/.idea/**,**/.vscode-test/**,**/.next/**,**/__pycache__/**}', 750);
+  const paths = nearby.map(u => path.relative(folder.uri.fsPath, u.fsPath).replaceAll('\\', '/'))
+    .filter(allowedRelativePath);
+
+  if (archMode) {
+    const outline = architectureOutline(paths, structureAsked ? 2400 : 850);
+    const evidence = structureAsked ? await readArchitectureEvidence(folder.uri.fsPath, paths) : '';
+    const body = [
+      `Projeto: ${folder.name}`,
+      structureAsked ? `Escopo: arquitetura da pasta raiz do projeto (sem exigir arquivo selecionado).` : `Contexto auxiliar do projeto: responda prioritariamente à pergunta conceitual atual; não retome a listagem das pastas sem necessidade.`,
+      `Árvore de caminhos realmente encontrados (parcial, limitada a 750 arquivos):\n${outline}`,
+      structureAsked ? `Amostras seguras de documentação, configuração e entradas (não são o projeto inteiro):\n${evidence || '(não disponíveis)'}` : '',
+      editor ? `Arquivo aberto opcional: ${relative} | Linguagem: ${editor.document.languageId}` : '',
+      'Distinguir SEMPRE o que os nomes e os trechos confirmam das convenções prováveis; não alegar que uma arquitetura foi escolhida por determinado motivo sem evidência.'
+    ].filter(Boolean).join('\n\n');
+    return { project: folder.name, projectId: projectIdentity(folder.uri.fsPath),
+      file: '(raiz)', language: 'multilanguage', content: body, architecturePaths: paths };
+  }
+
+  if (!editor) return null;
+  const rel = relative;
   const selection = editor.selection.isEmpty ? '' : bounded(editor.document.getText(editor.selection), 6000);
   const fullText = editor.document.getText();
   const fileText = focusedSource(fullText, learnerContext, editor.document.offsetAt(editor.selection.active));
@@ -56,10 +102,6 @@ export async function snapshot(learnerContext = ''): Promise<Snapshot | null> {
     .split('\n').filter(row => row.length > 3 && allowedRelativePath(row.slice(3))).slice(0, 35).join('\n');
   const activeDiff = await git(folder.uri.fsPath, ['diff', '--no-ext-diff', '--no-textconv', '--', rel]);
   const recentCommits = await git(folder.uri.fsPath, ['log', '-3', '--pretty=format:%h %s']);
-  const nearby = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, '**/*'),
-    '{**/.git/**,**/node_modules/**,**/.venv/**,**/dist/**,**/build/**,**/coverage/**,**/.idea/**,**/.vscode-test/**}', 250);
-  const paths = nearby.map(u => path.relative(folder.uri.fsPath, u.fsPath).replaceAll('\\', '/'))
-    .filter(allowedRelativePath);
   const related = await readRelatedFiles(folder.uri.fsPath, paths, rel, fullText, learnerContext);
   const body = [
     `Projeto: ${folder.name}`,
@@ -74,6 +116,33 @@ export async function snapshot(learnerContext = ''): Promise<Snapshot | null> {
     `Últimos commits locais:\n${bounded(recentCommits, 500) || '(indisponível)'}`
   ].join('\n\n');
   return { project: folder.name, projectId: projectIdentity(folder.uri.fsPath), file: rel, language: editor.document.languageId, content: body };
+}
+
+/** Explicitly sample conventional project overview files only, with realpath checks. */
+async function readArchitectureEvidence(root: string, paths: string[]): Promise<string> {
+  const candidates = architectureEvidence(paths, 3);
+  const realRoot = await fs.realpath(root).catch(() => '');
+  if (!realRoot) return '';
+  const result: string[] = [];
+  for (const relative of candidates) {
+    if (!allowedRelativePath(relative) || !likelyTextFile(relative)) continue;
+    const absolute = path.resolve(root, relative);
+    if (!withinRoot(root, absolute)) continue;
+    try {
+      const realFile = await fs.realpath(absolute);
+      if (!withinRoot(realRoot, realFile)) continue;
+      const stat = await fs.stat(realFile);
+      if (!stat.isFile() || stat.size > 100_000) continue;
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(absolute));
+      const value = document.getText();
+      if (value.length > 120_000 || value.includes('\0')) continue;
+      // No bulk index, credentials, or raw project dump. A separate local-model request
+      // is performed only after user invocation. This is not a secret-content scanner.
+      const lines = value.slice(0, 650).split('\n').slice(0, 28).join('\n');
+      result.push(`Arquivo: ${relative}\n${lines}`);
+    } catch { /* Missing or unreadable evidence must not block the architecture view. */ }
+  }
+  return result.join('\n\n').slice(0, 2200);
 }
 
 /** Read up to two explicitly linked text files. Symlink targets outside the workspace are rejected. */

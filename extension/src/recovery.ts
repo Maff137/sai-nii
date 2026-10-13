@@ -1,4 +1,5 @@
 import { Guidance, GuidancePlan, GuidanceProgress, parseGuidance, repeatsExplanation, repeatsQuestion } from './pedagogy';
+import { architectureIntent } from './architecture';
 
 /** Pure, testable orchestration. The model may propose a hint; the app decides whether it can be shown. */
 type Message = { role: 'system' | 'user' | 'assistant'; content: string };
@@ -14,10 +15,11 @@ type Inputs = {
   sourceContext: string;
   learnerText: string;
   topicContext: string;
+  observationLimit?: number;
 };
 
-function rejectionReason(raw: string, plan: GuidancePlan, previous?: GuidanceProgress): { guide?: Guidance; reason?: string } {
-  const guide = parseGuidance(raw, plan.needsHelp);
+function rejectionReason(raw: string, plan: GuidancePlan, previous?: GuidanceProgress, observationLimit = 230): { guide?: Guidance; reason?: string } {
+  const guide = parseGuidance(raw, plan.needsHelp, observationLimit);
   if (!guide) return { reason: 'formato inválido, conteúdo inseguro ou pista ausente' };
   if (repeatsQuestion(previous?.question, guide.question)) return { reason: 'pergunta semelhante à anterior' };
   if (plan.needsHelp && repeatsExplanation(previous?.observation, guide.hint ?? '')) {
@@ -49,6 +51,12 @@ export function rescueGuidance(
   plan: GuidancePlan,
   previous?: GuidanceProgress
 ): Guidance {
+  if (architectureIntent(topicContext)) {
+    return {
+      observation: 'Consegui obter a árvore de pastas, mas o modelo local não formulou uma explicação confiável da arquitetura. Não vou inventar responsabilidades sem confirmação.',
+      question: 'Quer começar pelo papel de uma pasta específica?'
+    };
+  }
   const symbol = selectedIdentifier(sourceContext, topicContext);
   const level = plan.needsHelp ? Math.max(1, plan.helpLevel) : 0;
   const stages: Guidance[] = symbol === 'setInterval' ? [
@@ -126,7 +134,7 @@ export function rescueGuidance(
 /** Two attempts, then an immediately useful, grounded and safe hint instead of a dead-end error. */
 export async function resolveGuidance(input: Inputs): Promise<GuidanceOutcome> {
   let response = await input.generate(input.messages);
-  let checked = rejectionReason(response, input.plan, input.previous);
+  let checked = rejectionReason(response, input.plan, input.previous, input.observationLimit);
   if (checked.guide) return { guide: checked.guide, recovered: false, origin: 'model' };
   const firstReason = checked.reason;
   const correction: Message[] = [
@@ -138,7 +146,7 @@ export async function resolveGuidance(input: Inputs): Promise<GuidanceOutcome> {
         `Não repita: ${JSON.stringify(input.previous?.question ?? '')}.` }
   ];
   response = await input.generate(correction);
-  checked = rejectionReason(response, input.plan, input.previous);
+  checked = rejectionReason(response, input.plan, input.previous, input.observationLimit);
   if (checked.guide) return { guide: checked.guide, recovered: false, origin: 'retry' };
   return {
     guide: rescueGuidance(input.sourceContext, `${input.learnerText} ${input.topicContext}`, input.plan, input.previous),

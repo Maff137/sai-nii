@@ -1,4 +1,64 @@
+## 0.2.5 (candidate — conversational robustness)
+
+- General Portuguese chat abbreviations get an auxiliary interpretation; the original question remains unchanged. Code and inline code are not rewritten.
+- Conceptual questions with no source file open no longer scan the repository or send an irrelevant file tree to the model. Architecture requests still use safe read-only workspace evidence.
+- Accept brief but meaningful explanations instead of discarding every answer shorter than 55 characters. Retry instructions guide natural interpretation rather than demanding formal wording.
+- Add a local VS Code diagnostic output channel with only rejection category, attempt and reply origin; no raw prompt/model output is logged.
+- Generic failure notices are not stored in the model's conversational history, reducing repetitive failure loops.
+- Does not claim general language understanding or full offline model installation. Verify behavior with local Qwen.
+
 # Changelog
+
+## 0.2.4 (candidate — natural conversation and safe Markdown)
+
+- Replaces root-workspace architecture-only conversation routing with a general conceptual explanation path, using previous turns only to resolve follow-up references.
+- Rejects copied learner questions and repeated answers; retries with a specific instruction about the latest request, without a special-case rule per programming topic.
+- Uses compact auxiliary context for natural conceptual follow-ups instead of flooding the local model with repository documentation. Only provides deterministic project-tree summaries for actual structure questions; other failures are explicitly reported rather than masked by unrelated directory explanations.
+- Renders a safe, intentionally limited Markdown subset in the webview: paragraphs, headings, bold, emphasis, lists, blockquotes, inline code and fenced code. All text is inserted with textContent, never innerHTML; raw HTML and links are not executed.
+- Limits contextual history and model output length for more concise conversational answers. No change to source editing permissions, model runtime or cloud/network behavior.
+- Includes tests for natural follow-ups, repetition, offline transport failure, markdown, malicious HTML content and output bounds.
+
+
+## 0.2.3 (candidate — multi-turn source-file architecture)
+
+- Recognizes informal follow-ups comparing one giant source file with smaller modules, even when no editor is open.
+- Model answers must address code decomposition rather than restating the role of project folders; conceptually useful answers do not need to mention unrelated filenames.
+- Targeted retry and bounded deterministic recovery teach why splitting source files helps, with tradeoffs for small programs and over-fragmentation.
+- Regression tests reproduce the user's original wording and demonstrate that a generic folder summary is rejected.
+
+
+## 0.2.2 (candidate — architecture tutoring quality)
+
+- Rejects the exact learner question being returned verbatim or near-verbatim as an architecture "answer" (real-device regression).
+- For questions about *why* code is organized, requires a causal explanation, not only a list of folder purposes.
+- For explicit "what if everything were in one folder" questions, requires the response to address that comparison.
+- Retries one weak model reply with an explicit instruction to explain benefits and tradeoffs; thereafter provides a grounded, language-neutral explanation using observed paths.
+- Deterministic recovery now explains the practical tradeoffs of separating source, tests, documentation and configuration; distinguishes observed paths from inferred motivations; avoids Markdown markup that would display literally in the VS Code panel.
+- Adds regression tests for verbatim echoes, reformulations, valid explanations, superficial lists and secret-file path filtering.
+- Does not claim LLM semantic correctness; full VS Code and real Qwen integration still require validation on the development machine.
+
+
+## v0.2.1 — Architecture response recovery
+
+- Project architecture answers use natural explanatory prose instead of the short JSON schema designed for code hints.
+- Architecture fallback now describes actually observed folders and manifests, including how implementation, tests and documentation are separated; it never repeats a generic refusal.
+- Later questions receive a different, deeper explanation when the model is unable to help.
+- The context sent to the 4K-token local model is smaller; a bounded list of paths is retained only for grounded, on-demand fallback.
+- Does not claim full dependency tracing or proficiency in every programming language.
+
+
+
+## 0.2.0 (candidate — architecture of a trusted workspace)
+
+- Architecture/organization questions work with only the trusted project root open; there is no need to select or copy a file tree.
+- Added a manual `Arquitetura do projeto` action and natural-language recognition of architecture questions.
+- Builds a compact, finite directory outline and reads short sections of up to four conventional docs, manifests and entry points, without executing them.
+- Language-neutral path indexing and representative tests for Python, JS/TS, Go, Rust, Java, C#, Swift and unknown languages. This is NOT a guarantee of equal model proficiency in every language.
+- Uses a longer structured response for architectural explanations, distinguishing observations from likely conventions and explicitly admitting uncertainty.
+- Root-level chats are isolated by workspace identity; clearing a project's memory also clears its in-session history.
+- Adds a VS Code Extension Host test with a disposable project to check architecture context with no editor open.
+- Only user-invoked, offline-to-loopback, read-only inspection. Folder names and small snippets remain untrusted local context. No full project index, source edits or autonomous scans.
+- Unit tests pass on pure modules locally; full extension compilation and GUI integration require validation on the developer's Mac.
 
 ## 0.1.1 (candidate — cross-file project context)
 
