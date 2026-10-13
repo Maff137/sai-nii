@@ -1,8 +1,8 @@
-## Current candidate: v0.2.8 — Prevent incomplete explanations
+## Current candidate: v0.2.9 — Natural dialogue continuity
 
-- Checks the local model's `finish_reason` for output-token cutoffs in conceptual discussions and the offline benchmark. A cut-off answer is rejected instead of shown as finished.
-- Retries with shorter, complete wording after a cutoff; no code-dump workaround and no changes to solution authorization.
-- Keeps independent teaching examples for conceptual questions. Does not claim semantic/factual verification or multilingual parity across models.
+- Preserves the last example across translation/rephrasing follow-ups using bounded, session-only context; otherwise keeps conversation snippets small.
+- Uses adaptive verbosity instructions in both Portuguese and English for brief, normal and detailed explanations, without treating word count as proof of quality.
+- A new synthetic scenario `pt-en-same-example` tests continuity of a bank-account example, with human review still required. No solution authorization change.
 - The model should normally use concise explanations instead of huge code-heavy lists. All results still require full TypeScript and VS Code integration validation on the user's Mac.
 
 # Sai-nii
@@ -13,7 +13,7 @@ Sai-nii is an open-source project focused on helping you reason about **your own
 
 ## Development status
 
-**Pre-alpha v0.2.8 (developer preview).** The current extension provides a sidebar, reads bounded context from the active file and local Git repository, calls an *already running* `llama.cpp` OpenAI-compatible server on loopback, and implements an initial solution-release gate and a local, project-scoped memory of learning interactions. Unlike earlier versions, Socratic questions are not mandatory on every turn. This is not yet a one-click installer, a full pedagogical engine, or a validated release. See [product specification](docs/Sai-nii_SPEC_v1.1.md) and [implementation notes](docs/DEVELOPMENT.md).
+**Pre-alpha v0.2.9 (developer preview).** The current extension provides a sidebar, reads bounded context from the active file and local Git repository, calls an *already running* `llama.cpp` OpenAI-compatible server on loopback, and implements an initial solution-release gate and a local, project-scoped memory of learning interactions. Unlike earlier versions, Socratic questions are not mandatory on every turn. This is not yet a one-click installer, a full pedagogical engine, or a validated release. See [product specification](docs/Sai-nii_SPEC_v1.1.md) and [implementation notes](docs/DEVELOPMENT.md).
 
 ## Try the development extension
 

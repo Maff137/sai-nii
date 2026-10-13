@@ -1,3 +1,13 @@
+## 0.2.9 (candidate — continuity and response proportionality)
+
+- Keep bounded history from the same project/file session. When a learner requests a translation or a re-explanation, preserve a compact copy of the **last educational example**, even if it appeared after a long introduction in the previous response.
+- The current learner question remains the highest priority. For ordinary follow-ups, do not force reuse of an old example when the learner changes topic.
+- Add generic answer-depth steering (brief / ordinary / detailed) in Portuguese and English, respecting explicit learner requests without hard-failing on word counts.
+- Share the exact conversational history selection and turn-specific instructions between the live extension and the offline evaluator. Avoid benchmark-only behavior that the VS Code extension does not reproduce.
+- Add a synthetic PT→EN→PT scenario for retaining the same bank-account example across an English explanation and a brief Portuguese follow-up. Rubrics require human judgment and do not certify continuity automatically.
+- No extra model, network request, telemetry or persistent storage of dialogue; prior example context is ephemeral. Permissions for editing projects or releasing complete solutions are unchanged.
+- Candidate requires Mac TypeScript compilation, integration test and Qwen benchmark before publication.
+
 ## 0.2.8 (refinement — distinguish teaching examples from project solutions)
 
 - Remove the blanket ban on fenced Markdown code in conceptual tutoring; small **self-contained educational examples** may illustrate a concept, including when switching between Portuguese and English.

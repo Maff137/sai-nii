@@ -11,6 +11,7 @@ import { DISCUSSION_SYSTEM, DISCUSSION_SYSTEM_EN, projectStructureQuestion, reso
 import { informalInterpretation } from './informal';
 import { resolveGuidance } from './recovery';
 import { LearnerLanguage, chooseLearnerLanguage, localizedSystem } from './language';
+import { compactDiscussionHistory, dialogueInstruction } from './dialogue';
 
 class SaiNiiView implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
@@ -115,10 +116,11 @@ class SaiNiiView implements vscode.WebviewViewProvider {
         evidence ? `Tentativa relatada: ${evidence.attempt.slice(0, 1200)}\nBloqueio relatado: ${evidence.blocker.slice(0, 1200)}` : '',
         `PEDIDO ATUAL DO ALUNO (PRIORIDADE): ${text.slice(0, 1800)}`,
         isArchitecture ? informalInterpretation(text) : '',
+        isArchitecture ? dialogueInstruction(text, answerLanguage, relevantHistory.some(item => item.role === 'assistant')) : '',
         plan?.instruction ?? ''
       ].filter(Boolean).join('\n\n');
       const priorTurns: ChatMessage[] = isArchitecture
-        ? relevantHistory.slice(-4).map(item => ({ role: item.role, content: item.content.slice(0, 1050) }))
+        ? compactDiscussionHistory(relevantHistory, text)
         : relevantHistory.slice(-6);
       const messages: ChatMessage[] = [{ role: 'system', content: localizedSystem(system, answerLanguage) }, ...priorTurns, { role: 'user', content: contextualPrompt }];
       let answer: string;

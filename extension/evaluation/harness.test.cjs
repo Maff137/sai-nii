@@ -120,3 +120,24 @@ test('synthetic English teaching example is accepted on first attempt without pr
  assert.equal(calls,1);assert.equal(result.turns[0].origin,'model');assert.deepEqual(result.turns[0].rejected,[]);
  assert.equal(result.turns[0].answer,undefined);
 });
+
+
+test('real harness retains the previous teaching example when student changes explanation language',async()=>{
+ const synthetic={id:'bilingual-same-example',language:'pt',label:'followup',turns:[
+  {prompt:'Explique encapsulamento usando a ContaBancaria.',signals:[]},
+  {prompt:'Now explain that in English using the same example.',signals:[]}
+ ]};
+ const lengthy='Encapsulamento limita acesso a dados por métodos públicos. '.repeat(32) +
+  '\n```python\nclass ContaBancaria:\n    def depositar(self, valor):\n        self.saldo += valor\n```';
+ let step=0;
+ const report=await evaluateScenario(synthetic,async messages=>{
+  step++;
+  if(step===2){
+   assert.match(messages[0].content,/English/);
+   assert.ok(messages.some(m=>m.role==='assistant'&&m.content.includes('ContaBancaria')));
+   assert.match(messages.at(-1).content,/SAME programming example/);
+  }
+  return step===1?lengthy:'Encapsulation controls access to the state in a bank account through its public deposit operation.';
+ });
+ assert.equal(report.turns[1].origin,'model');assert.equal(step,2);
+});

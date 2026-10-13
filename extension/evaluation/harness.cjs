@@ -5,6 +5,7 @@ const { performance } = require('node:perf_hooks');
 const { chooseLearnerLanguage, localizedSystem } = require('../dist/language.js');
 const { technicalReview, rubricFor } = require('./technical-review.cjs');
 const { INCOMPLETE_GENERATION } = require('../dist/generation.js');
+const { compactDiscussionHistory, dialogueInstruction } = require('../dist/dialogue.js');
 
 /** A small set of observable indicators. None proves semantic correctness or teaching quality. */
 function roughLanguage(answer, expected) {
@@ -49,8 +50,8 @@ async function evaluateScenario(scenario, generate, options = {}) {
     const turn = scenario.turns[index];
     const language = chooseLearnerLanguage(turn.prompt, previousLanguage);
     const auxiliary = informalInterpretation(turn.prompt);
-    const current = [`PEDIDO ATUAL DO ALUNO (PRIORIDADE): ${turn.prompt}`, auxiliary].filter(Boolean).join('\n\n');
-    const messages = [{ role: 'system', content: localizedSystem(language === 'en' ? DISCUSSION_SYSTEM_EN : DISCUSSION_SYSTEM, language) }, ...history.slice(-4), { role: 'user', content: current }];
+    const current = [`PEDIDO ATUAL DO ALUNO (PRIORIDADE): ${turn.prompt}`, auxiliary, dialogueInstruction(turn.prompt, language, history.some(item => item.role === 'assistant'))].filter(Boolean).join('\n\n');
+    const messages = [{ role: 'system', content: localizedSystem(language === 'en' ? DISCUSSION_SYSTEM_EN : DISCUSSION_SYSTEM, language) }, ...compactDiscussionHistory(history, turn.prompt), { role: 'user', content: current }];
     const rejectionReasons = [];
     // The evaluator uses fixed, synthetic prompts. Raw rejected generations are
     // visible only on explicit opt-in, held in memory for this run, never logged

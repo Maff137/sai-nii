@@ -126,5 +126,21 @@ const scenarios = [
         watch: [{ id: 'parallelism_needs_context', pattern: /parallel|concurr|simultane/i }]
       } }]
   }
+  ,{
+    id: 'pt-en-same-example', language: 'pt', experimental: true,
+    label: 'Continuidade do mesmo exemplo entre idiomas e aprofundamento',
+    turns: [
+      {prompt:'Me explica encapsulamento com um exemplo pequeno de conta bancária.',
+       signals:[/encapsul|estado|dados|saldo/i],
+       technicalReview:{rubric:['Explicação breve e concreta de controle do estado, com exemplo de conta bancária. Não entregar uma implementação completa.']}},
+      {prompt:'Now explain that in English, using the same bank account example.',
+       signals:[/account|balance|deposit|bank/i],
+       technicalReview:{rubric:['Responder em inglês, mantendo o mesmo exemplo de conta bancária se tiver aparecido anteriormente. Evitar trocar para um carro ou outra entidade sem necessidade.']}},
+      {prompt:'e qual a diferença disso pra abstração? pode ser breve',
+       signals:[/abstra|essencia|simplific/i,/encapsul|acesso|interno|estado/i],
+       technicalReview:{rubric:['Comparar a nova ideia com o assunto anterior em português e sem repetir toda a resposta inicial.']}}
+    ]
+  }
+
 ];
 module.exports = { scenarios };

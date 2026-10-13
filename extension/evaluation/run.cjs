@@ -46,7 +46,7 @@ async function main(argv) {
   const options = parseOptions(argv);
   if (options.help) {
     console.log('Uso: npm run evaluate:local -- [--limit 3] [--case pt-git] [--port 8080] [--model local] [--show-answers] [--show-rubric] [--show-rejected]');
-    console.log('Padrão: 3 cenários sintéticos. Execute --limit 9 para cenários adicionais, incluindo conversas bilíngues.');
+    console.log('Padrão: 3 cenários sintéticos. Execute --case pt-en-same-example para verificar continuidade do exemplo em dois idiomas.');
     return;
   }
   const generate = localGenerator(options.port, options.model);
