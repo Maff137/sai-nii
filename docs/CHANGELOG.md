@@ -1,3 +1,22 @@
+## 0.2.6 (patch — evaluation and project-tree classifier)
+
+- Fix architecture overview in VS Code Extension Host: unify request recognition with the retrieval decision so the user's informal question about organized project files loads a bounded folder tree.
+- Keep source-file modularization questions separate from directory-structure questions.
+- Fix a false benchmark alert for Portuguese accented terms (e.g., `módulos` vs `modul`) without claiming that keyword coverage measures truth.
+- Add a general tutoring constraint: code modularity does not automatically imply parallel execution, higher speed or runtime isolation.
+- Add regression tests for the real screenshot prompt and the real benchmark output. Full VS Code integration and a real model run must still be verified on the user's Mac.
+
+# Sai-nii — Changelog
+
+## 0.2.6 (candidate — offline pedagogical evaluation)
+
+- Adds a reproducible, opt-in local-model benchmark with synthetic PT-BR informal questions, natural follow-ups, concepts from Git and Rust, ambiguous questions, and an experimental English conversation.
+- Uses the production `DISCUSSION_SYSTEM`, informal interpretation helper, and `resolveDiscussion` validation/retry path. The benchmark does not use a real VS Code workspace and is not an end-to-end test of the extension.
+- Logs only case IDs, response origin, rejection categories, elapsed time and approximate coverage/language indicators. Raw model responses are not printed by default and nothing is saved to disk. `--show-answers` opts in to local console printing of benchmark answers.
+- No external APIs, telemetry, keys, background jobs or project scans. Requests to an already running model are confined to `127.0.0.1` on a validated port.
+- Indicators cannot prove correctness, truthfulness, language proficiency or teaching quality; human review is essential.
+- The optional English case is a baseline for future development, not a claim of English proficiency.
+
 ## 0.2.5 (candidate — conversational robustness)
 
 - General Portuguese chat abbreviations get an auxiliary interpretation; the original question remains unchanged. Code and inline code are not rewritten.

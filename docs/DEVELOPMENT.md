@@ -71,3 +71,23 @@ Use `npm test` then `npm run test:integration` to test a temporary Python fixtur
 For an unsuccessful conceptual reply, open VS Code **Output** and select **Sai-nii: diagnóstico**. It reports categories such as `too_short`, `echo_question`, `repeat_answer`, or `json`, along with whether a reply came from `model`, `retry`, or `fallback`. The diagnostic output contains no raw prompts or answers.
 
 To test informal questions, keep the workspace root open; code excerpts and symbols in backticks are not normalized. The conversation engine interprets common abbreviations as optional context and falls back transparently if the model fails twice.
+
+
+## Offline pedagogical evaluation (v0.2.6)
+
+After running `npm install` once and starting a **local** llama-server with model alias `local` on `127.0.0.1:8080`, use:
+
+```bash
+cd extension
+npm run evaluate:check
+npm run evaluate:local                       # first 3 scenarios
+npm run evaluate:local -- --limit 6          # includes experimental English
+npm run evaluate:local -- --case pt-git
+npm run evaluate:local -- --show-answers     # ONLY if you want answers printed locally
+```
+
+The suite shares the real conceptual dialogue policy (`discussion.ts`) and informal-language interpretation, but **does not** load project code, exercise the webview, or prove educational correctness. It reports response origin (model/retry/fallback), rejection codes, elapsed time, and approximate relevance/language indicators. These are deliberately not a numeric student score or an automated claim of answer correctness. To assess factual quality, review a sample of answers locally with `--show-answers`; do not publish them if they contain personal information. Neither answer text nor personal workspace files are saved by this harness. The optional English case is exploratory because English response behavior is not yet implemented as a guaranteed feature.
+
+The command never installs a model and never uses cloud services; it only connects to loopback `127.0.0.1`.
+
+Future optional language analysis packs are described in `docs/FUTURE_LANGUAGE_PACKS.md` (design note only).

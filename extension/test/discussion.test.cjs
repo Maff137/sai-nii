@@ -73,3 +73,10 @@ test('retry repeats the real original learner question instead of treating corre
   }});
   assert.equal(count,2);
 });
+
+
+test('original architecture question must include the project-tree evidence', () => {
+ assert.equal(projectStructureQuestion('Por que os arquivos do código são organizados do jeito que estão?'), true);
+ assert.equal(projectStructureQuestion('Me explica por que as pastas foram organizadas assim'), true);
+ assert.equal(projectStructureQuestion('Por que colocar todo o código num único arquivo?'), false);
+});

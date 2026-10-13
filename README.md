@@ -53,3 +53,8 @@ When asked why folders are organized in a particular way, Sai-nii now rejects ec
 Com a pasta raiz aberta, o professor responde dúvidas conceituais espontâneas sem exigir que o aluno selecione ou descreva arquivos. A árvore do projeto é um apoio, não uma resposta-padrão: perguntas de arquitetura usam evidências mais completas, e perguntas gerais usam um contexto resumido. O modelo local ainda pode produzir explicações ruins; validações detectam apenas erros evidentes, como repetição literal.
 
 A interface exibe um subconjunto de Markdown (títulos, negrito, itálico, listas, citações e blocos de código). HTML bruto, links clicáveis e imagens não são interpretados. Texto recebido do modelo nunca é executado como HTML. A qualidade das explicações em linguagens diferentes continua dependendo do modelo local e da cobertura de análise contextual.
+
+
+## Evaluation harness (v0.2.6 candidate)
+
+Run `cd extension && npm run evaluate:check` for deterministic harness tests without a model. With an existing `llama-server` running locally, `npm run evaluate:local` runs three synthetic scenarios (natural PT-BR questions and follow-ups) against the local model. The optional English scenario is experimental: `npm run evaluate:local -- --case en-encapsulation`. Only aggregate indicators are printed by default. See `docs/DEVELOPMENT.md` for limitations and privacy constraints.
