@@ -105,3 +105,17 @@ test('two successive model failures produce two different useful turns, preservi
   assert.match(guidanceText(second.guide, true), /argumento|fun[cç][aã]o/i);
   assert.doesNotMatch(guidanceText(second.guide, true), /1000/);
 });
+
+test('records whether model, retry or fallback produced the guidance', async () => {
+  const valid = JSON.stringify({ observation:'Boa observação, a chamada agenda uma operação.', hint:'', question:'' });
+  const inputs = { messages, plan:planGuidance('O que é setInterval?'), sourceContext:source,
+    learnerText:'O que é setInterval?', topicContext:'' };
+  const direct = await resolveGuidance({...inputs, generate:async () => valid});
+  assert.equal(direct.origin,'model');
+  assert.equal(direct.guide.question,'');
+  let tries=0;
+  const retried = await resolveGuidance({...inputs, generate:async () => ++tries===1 ? 'invalid' : valid});
+  assert.equal(retried.origin,'retry');
+  const fallback = await resolveGuidance({...inputs, generate:async () => 'invalid'});
+  assert.equal(fallback.origin,'fallback');
+});

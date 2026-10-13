@@ -2,7 +2,7 @@
   "name": "sai-nii",
   "displayName": "Sai-nii",
   "description": "An offline, Socratic programming tutor for your real projects.",
-  "version": "0.0.5",
+  "version": "0.1.0",
   "private": true,
   "publisher": "sai-nii",
   "license": "MIT",
@@ -89,11 +89,13 @@
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "compile": "tsc -p .",
-    "test": "npm run compile && node --test test/*.test.cjs"
+    "test": "npm run compile && node --test test/*.test.cjs",
+    "test:integration": "node test/integration/run.cjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.95.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "@vscode/test-electron": "^3.1.0"
   }
 }

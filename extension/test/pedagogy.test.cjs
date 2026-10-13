@@ -65,3 +65,12 @@ test('blocks repetition of the previous explanation, not just the previous quest
   assert.equal(repeatsExplanation(explanation, 'setInterval é uma função que executa um bloco de código em intervalos regulares.'), true);
   assert.equal(repeatsExplanation(explanation, 'Observe os argumentos separados por vírgula depois da função callback.'), false);
 });
+
+test('a short explanation or confirmation does not require a question', () => {
+  const { GUIDANCE_SYSTEM, planGuidance } = require('../dist/pedagogy.js');
+  assert.deepEqual(parseGuidance(JSON.stringify({ observation: 'Correto: a função é chamada após a condição.', hint:'', question:'' })),
+    { observation: 'Correto: a função é chamada após a condição.', question: '' });
+  assert.equal(guidanceText({observation:'Sua hipótese está correta.', question:''}), 'Sua hipótese está correta.');
+  assert.match(GUIDANCE_SYSTEM, /Perguntas socráticas são um RECURSO/);
+  assert.match(planGuidance('O que significa callback?').instruction, /NÃO são obrigatórias/);
+});

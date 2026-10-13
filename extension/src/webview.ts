@@ -24,7 +24,7 @@ textarea{width:100%;resize:vertical;min-height:58px;padding:8px;background:var(-
 </div>
 <div id="questionBox"><label for="question">Sua dúvida sobre o projeto</label><textarea id="question" placeholder="Em qual parte do raciocínio você travou?"></textarea>
 <div class="buttons"><button id="send">Perguntar</button><button id="analyze" class="secondary">Analisar seleção</button><button id="release" class="secondary">Pedir solução</button></div></div>
-<div class="buttons"><button id="memory" class="secondary">Ver memória</button><button id="clear" class="secondary">Apagar memória</button></div>
+<div class="buttons"><button id="memory" class="secondary">Ver memória</button><button id="clearProject" class="secondary">Apagar projeto</button><button id="clear" class="secondary">Apagar tudo</button></div>
 <div class="footer">O professor não altera arquivos nem executa comandos de teste. Requer llama-server local.</div>
 <script nonce="${nonce}">
 const vscode=acquireVsCodeApi();
@@ -39,11 +39,13 @@ $('release').addEventListener('click',()=>{$('releaseForm').style.display='block
 $('cancelRelease').addEventListener('click',()=>{$('releaseForm').style.display='none';$('questionBox').style.display='block'});
 $('sendRelease').addEventListener('click',()=>post('requestSolution',{attempt:$('attempt').value.trim(),blocker:$('blocker').value.trim(),explicit:true}));
 $('memory').addEventListener('click',()=>post('viewMemory'));
+$('clearProject').addEventListener('click',()=>post('clearProjectMemory'));
 $('clear').addEventListener('click',()=>post('clearMemory'));
 window.addEventListener('message',event=>{const m=event.data;if(!m||typeof m!=='object')return;
  if(m.type==='busy')busy(Boolean(m.value));
  if(m.type==='assistant'){add('assistant',m.text);$('releaseForm').style.display='none';$('questionBox').style.display='block'}
  if(m.type==='error')add('error',m.text);
+ if(m.type==='notice')add('assistant',m.text);
  if(m.type==='memory')add('assistant',m.text);
 });
 add('assistant','Qual parte do seu projeto você gostaria de entender melhor?');

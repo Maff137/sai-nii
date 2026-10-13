@@ -1,3 +1,15 @@
+# Changelog
+
+## 0.1.0 (development)
+
+- Socratic guidance may contain zero or one question; no forced questions.
+- Per-workspace offline learning history: topics, difficulty signals, response origin and retention across sessions.
+- No code, raw questions, or file paths stored in the new learning history. Existing v1 question notes are sanitized and migrated.
+- Project-scoped and complete deletion controls with confirmation.
+- Isolated chat histories by open file and project to avoid leaking conversational context across workspaces.
+- Added regression tests and a separately runnable VS Code Extension Host smoke test.
+- Does not include a bundled GGUF/runtime or prove automatic tests are safe to execute.
+
 ## 0.0.5 — Recuperação pedagógica sem erros bloqueantes (pré-alfa)
 
 - A resposta inválida do modelo recebe uma segunda tentativa com instruções específicas.

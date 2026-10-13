@@ -4,7 +4,7 @@ import { Guidance, GuidancePlan, GuidanceProgress, parseGuidance, repeatsExplana
 type Message = { role: 'system' | 'user' | 'assistant'; content: string };
 type Generate = (messages: Message[]) => Promise<string>;
 
-export type GuidanceOutcome = { guide: Guidance; recovered: boolean; rejectionReason?: string };
+export type GuidanceOutcome = { guide: Guidance; recovered: boolean; origin: 'model' | 'retry' | 'fallback'; rejectionReason?: string };
 
 type Inputs = {
   messages: Message[];
@@ -127,22 +127,23 @@ export function rescueGuidance(
 export async function resolveGuidance(input: Inputs): Promise<GuidanceOutcome> {
   let response = await input.generate(input.messages);
   let checked = rejectionReason(response, input.plan, input.previous);
-  if (checked.guide) return { guide: checked.guide, recovered: false };
+  if (checked.guide) return { guide: checked.guide, recovered: false, origin: 'model' };
   const firstReason = checked.reason;
   const correction: Message[] = [
     ...input.messages,
     { role: 'assistant', content: response.slice(0, 1200) },
     { role: 'user', content: `Sua última saída foi rejeitada (${firstReason}). Gere SOMENTE JSON com observation, hint e question. ` +
         `O aluno quer raciocinar sobre seu código, não receber a resposta pronta. ` +
-        `Se estiver bloqueado, hint deve apresentar uma pista concreta NOVA; question deve conter apenas uma pergunta com ?. ` +
+        `Se estiver bloqueado, hint deve apresentar uma pista concreta NOVA; question pode ser vazio ou conter UMA pergunta útil. ` +
         `Não repita: ${JSON.stringify(input.previous?.question ?? '')}.` }
   ];
   response = await input.generate(correction);
   checked = rejectionReason(response, input.plan, input.previous);
-  if (checked.guide) return { guide: checked.guide, recovered: false };
+  if (checked.guide) return { guide: checked.guide, recovered: false, origin: 'retry' };
   return {
     guide: rescueGuidance(input.sourceContext, `${input.learnerText} ${input.topicContext}`, input.plan, input.previous),
     recovered: true,
+    origin: 'fallback',
     rejectionReason: checked.reason ?? firstReason
   };
 }

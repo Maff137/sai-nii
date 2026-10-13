@@ -36,3 +36,15 @@ The extension talks to `http://127.0.0.1:8080/v1/chat/completions`, and has no r
 3. Add session-scoped learner memory and finer-grained deletion and integrate only useful portions of Tutor MCP.
 4. Bundle and manage llama.cpp executables for darwin-arm64, win32-x64, linux-x64; add GGUF import, hardware profiling, and strict offline smoke tests.
 5. Build/sign distribution artifacts and validate on actual macOS/Windows/Ubuntu hardware.
+
+## v0.1.0 learning history and pedagogy
+
+The local learning store uses VS Code `globalState` and records only: hashed workspace identity, workspace display name, VS Code language ID, concept category, event type (`question`, `difficulty`, `solution`), response origin (`model`, `retry`, `fallback`, `solution`) and time. The raw user question, project source, diffs, code identifiers and physical paths are NOT persisted by this subsystem. A migration converts earlier raw-question `learnerNotes.v1` into categorized records, then clears those older notes. This is not a claim of verified learner proficiency: it counts observed help-seeking and topics only. The model sees only aggregated, project-scoped counters. The data stays on each device.
+
+The sidebar offers **Ver memória**, **Apagar projeto**, and **Apagar tudo**. Deletion requires confirmation; other VS Code backups and other extensions' storage are outside Sai-nii's control.
+
+Structured replies still use `observation`, `hint`, and `question`, but `question` is allowed to be an empty string. The model is instructed to make a Socratic question only when pedagogically helpful. Rescue prompts use questions as a safe conservative default; no tests or code edits are executed.
+
+## Extension Host smoke test
+
+Run `npm install`, `npm test`, then `npm run test:integration`. The separate integration command may download a VS Code binary on first run, and requires a supported GUI/host environment. It validates activation and command registrations, not pedagogical model behavior; unit tests use deterministic model simulations. CI continues to run unit tests on macOS, Windows and Ubuntu.

@@ -6,7 +6,7 @@ Sai-nii is an open-source project focused on helping you reason about **your own
 
 ## Development status
 
-**Pre-alpha foundation.** The current extension provides a sidebar, reads bounded context from the active file and local Git repository, calls an *already running* `llama.cpp` OpenAI-compatible server on loopback, and implements an initial solution-release gate. This is not yet a one-click installer, a full pedagogical engine, or a validated release. See [product specification](docs/Sai-nii_SPEC_v1.1.md) and [implementation notes](docs/DEVELOPMENT.md).
+**Pre-alpha v0.1.0 (developer preview).** The current extension provides a sidebar, reads bounded context from the active file and local Git repository, calls an *already running* `llama.cpp` OpenAI-compatible server on loopback, and implements an initial solution-release gate and a local, project-scoped memory of learning interactions. Unlike earlier versions, Socratic questions are not mandatory on every turn. This is not yet a one-click installer, a full pedagogical engine, or a validated release. See [product specification](docs/Sai-nii_SPEC_v1.1.md) and [implementation notes](docs/DEVELOPMENT.md).
 
 ## Try the development extension
 
@@ -30,3 +30,9 @@ No model, binaries, or service is automatically downloaded in this foundation ve
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## v0.1.0 local learner history
+
+The **Ver memória** command now shows per-project topic and difficulty counts. You can remove one project's memory (**Apagar projeto**) or all Sai-nii memory (**Apagar tudo**). The system does not assign grades, assume mastery, or store code and full questions in the new history. Older raw-question notes are sanitized during migration. A local model reply may include **zero or one** Socratic question depending on what best helps you learn.
+
+For developer testing: `npm test`. A separate optional VS Code Extension Host smoke test is available via `npm run test:integration`; the first run may download a VS Code runtime. Neither test needs the llama-server running. See [development notes](docs/DEVELOPMENT.md).

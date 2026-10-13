@@ -29,7 +29,7 @@ export async function complete(messages: ChatMessage[], unlocked = false, requir
               type: 'object',
               properties: {
                 observation: { type: 'string', minLength: 1, maxLength: 230 },
-                question: { type: 'string', minLength: 2, maxLength: 180 },
+                question: { type: 'string', maxLength: 180 },
                 hint: { type: 'string', maxLength: 230, ...(requireHint ? { minLength: 1 } : {}) }
               },
               required: ['observation', 'question', 'hint'],

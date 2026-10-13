@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { bounded } from './pedagogy';
 import { focusedSource } from './focus';
+import { projectIdentity } from './memory';
 
 const execFileAsync = promisify(execFile);
 const FOLDER_EXCLUDE = new Set(['.git', '.ssh', '.aws', '.azure', '.gnupg', 'node_modules', '.venv', 'venv', 'dist', 'build', 'coverage', '.next', '__pycache__']);
@@ -32,7 +33,7 @@ async function git(root: string, args: string[]): Promise<string> {
   }
 }
 
-export type Snapshot = { project: string; file: string; content: string };
+export type Snapshot = { project: string; projectId: string; file: string; language: string; content: string };
 
 /** Read-only, bounded editor snapshot. Never reads .env/keys or generated directories. */
 export async function snapshot(learnerContext = ''): Promise<Snapshot | null> {
@@ -68,5 +69,5 @@ export async function snapshot(learnerContext = ''): Promise<Snapshot | null> {
     `Git diff do arquivo aberto:\n${bounded(activeDiff, 1500) || '(nenhum)'}`,
     `Últimos commits locais:\n${bounded(recentCommits, 500) || '(indisponível)'}`
   ].join('\n\n');
-  return { project: folder.name, file: rel, content: body };
+  return { project: folder.name, projectId: projectIdentity(folder.uri.fsPath), file: rel, language: editor.document.languageId, content: body };
 }
