@@ -1,4 +1,5 @@
 import { LearnerLanguage } from './language';
+import { isRephrasingRequest, observedCodeNames } from './dialogue';
 import { isIncompleteGeneration } from './generation';
 import { architectureSynopsis, architectureIntent, singleFileIntent, architectureOutline } from './architecture';
 
@@ -74,7 +75,7 @@ export function nearCopy(answer: string, source: string): boolean {
   return common / right.length > 0.85 && common / left.length > 0.80;
 }
 
-export type RejectionReason = 'empty' | 'too_short' | 'too_long' | 'json' | 'code' | 'echo_question' | 'repeat_answer' | 'generic_echo' | 'truncated' | 'valid';
+export type RejectionReason = 'empty' | 'too_short' | 'too_long' | 'json' | 'code' | 'echo_question' | 'repeat_answer' | 'generic_echo' | 'truncated' | 'rewritten_example' | 'unobserved_identifier' | 'valid';
 
 /**
  * Conservative intent boundary for the un-gated conceptual path. This is NOT a
@@ -107,6 +108,120 @@ export function hasDisallowedCodeExample(reply: string, question: string): boole
   return normalizeMeaning(explanation).length < 45;
 }
 
+
+/** Strip comments only when outside quoted strings; code literals are still evidence. */
+function executableLines(code: string): string[] {
+  const withoutComment = (line: string): string => {
+    let quoted: '\"' | "'" | '`' | '' = '';
+    let escaped = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (quoted) {
+        if (escaped) { escaped = false; continue; }
+        if (c === '\\') { escaped = true; continue; }
+        if (c === quoted) quoted = '';
+      } else if (c === '\"' || c === "'" || c === '`') {
+        quoted = c;
+      } else if (c === '#' && (i === 0 || /\s/.test(line[i - 1]))) {
+        return line.slice(0, i).trimEnd();
+      } else if (c === '/' && line[i + 1] === '/' && (i === 0 || /\s/.test(line[i - 1]))) {
+        return line.slice(0, i).trimEnd();
+      }
+    }
+    return line.trimEnd();
+  };
+  return code.replace(/\r\n/g, '\n').split('\n')
+    .map(line => withoutComment(line.replace(/\t/g, '    ')))
+    .filter(line => line.trim().length > 0);
+}
+
+/** A translation can quote an exact subset of earlier source code, including translated
+ * comments. It must not silently change statements, arguments, values or their order.
+ * This is a conservative lexical check, not a proof of semantic equivalence.
+ */
+export function rewritesPreviousExample(reply: string, question: string, previous?: string): boolean {
+  if (!previous || !isRephrasingRequest(question)) return false;
+  const blocks = (text: string): string[][] => [...text.matchAll(/^ {0,3}```[^\n]*\n([\s\S]*?)^ {0,3}```[\t ]*$/gm)]
+    .map(match => executableLines(match[1]));
+  const earlier = blocks(previous).filter(lines => lines.length);
+  const later = blocks(reply).filter(lines => lines.length);
+  if (!earlier.length || !later.length) return false;
+  const unchangedExcerpt = (candidate: string[], original: string[]): boolean => {
+    let index = 0;
+    for (const line of candidate) {
+      while (index < original.length && original[index] !== line) index++;
+      if (index === original.length) return false;
+      index++;
+    }
+    return true;
+  };
+  return later.some(lines => !earlier.some(original => unchangedExcerpt(lines, original)));
+}
+
+/** The model writes prose; the application owns previously shown educational code.
+ * When a translation/re-explanation regenerates a snippet, restore the earlier
+ * complete block byte-for-byte rather than accepting or repeatedly rejecting
+ * subtle edits to literals, strings, method bodies or identifiers.
+ *
+ * This only applies to the previous assistant's *educational* example. It
+ * never fetches workspace files, alters sources or grants solution permission.
+ * If the previous example is too large to reuse safely, omit the regenerated
+ * block; the original remains visible in the conversation.
+ */
+export function anchorPriorExample(reply: string, question: string, previous?: string): { text: string; reused: boolean } {
+  if (!previous || !isRephrasingRequest(question) || isIncompleteGeneration(reply)) {
+    return { text: reply, reused: false };
+  }
+  const codeFence = /^ {0,3}```[^\n]*\n[\s\S]*?^ {0,3}```[\t ]*$/gm;
+  const originals = [...previous.matchAll(codeFence)].map(match => match[0]);
+  if (!originals.length) return { text: reply, reused: false };
+  const candidates = [...reply.matchAll(codeFence)];
+  if (!candidates.length) return { text: reply, reused: false };
+  // Multiple distinct code blocks are ambiguous: do not arbitrarily replace
+  // a translated snippet with a different earlier demonstration.
+  const original = originals.length === 1 ? originals[0] : '';
+  const body = original.replace(/^ {0,3}```[^\n]*\n/, '').replace(/^ {0,3}```[\t ]*$/m, '');
+  const canShow = Boolean(original) && body.length <= 1600 &&
+    body.split('\n').filter(line => line.trim()).length <= 30;
+  let reused = false;
+  let inserted = false;
+  const result = reply.replace(codeFence, () => {
+    reused = true;
+    if (!inserted && canShow) { inserted = true; return original; }
+    return '';
+  });
+  // A successful re-explanation should contain meaningful prose independent
+  // of the code. A code-only generation must still fail ordinary validation.
+  return { text: result.replace(/\n{3,}/g, '\n\n').trim(), reused };
+}
+
+/** Conservative lexical consistency check for translations of the SAME
+ * educational code. Detect code-styled unknown field/method/class names in
+ * prose. This is not a symbol resolver, semantic verifier, or universal
+ * hallucination detector. Generic language terms are left alone. */
+export function unobservedExampleIdentifiers(reply: string, question: string, previous?: string): string[] {
+  if (!previous || !isRephrasingRequest(question)) return [];
+  const originals = observedCodeNames(previous);
+  if (!originals.length) return [];
+  const names = new Set(originals);
+  const prose = reply.replace(/^ {0,3}```[^\n]*\n[\s\S]*?^ {0,3}```[\t ]*$/gm, ' ');
+  const missing = new Set<string>();
+  const mentions = /`([A-Za-z_$][\w$]{1,48})`/g;
+  for (const match of prose.matchAll(mentions)) {
+    const identifier = match[1];
+    if (names.has(identifier)) continue;
+    const before = prose.slice(Math.max(0, match.index - 42), match.index);
+    const after = prose.slice(match.index + match[0].length, match.index + match[0].length + 42);
+    // Avoid classifying incidental technical vocabulary, e.g. `private`, as
+    // a missing name. Only a code-style name described as a member counts.
+    const specific = identifier.startsWith('__') ||
+      (/(?:method|function|class|attribute|field|m[eé]todo|fun[cç][aã]o|classe|atributo|vari[aá]vel)\s*$/i.test(before)) ||
+      (/^\s*(?:method|function|class|attribute|field|m[eé]todo|fun[cç][aã]o|classe|atributo)/i.test(after));
+    if (specific) missing.add(identifier);
+  }
+  return [...missing].slice(0, 6);
+}
+
 /** Inspect structure rather than requiring an arbitrary multi-paragraph minimum. */
 export function discussionQuality(raw: string, question: string, previous = ''): RejectionReason {
   const reply = raw.trim();
@@ -129,13 +244,21 @@ export function usefulDiscussionAnswer(raw: string, question: string, previous =
   return discussionQuality(raw, question, previous) === 'valid';
 }
 
-export async function resolveDiscussion(input: DiscussionInput): Promise<{text: string; origin: DiscussionOrigin}> {
+export async function resolveDiscussion(input: DiscussionInput): Promise<{text: string; origin: DiscussionOrigin; codeReused?: boolean}> {
   let rejection: RejectionReason = 'empty';
   for (let attempt = 0; attempt < 2; attempt++) {
     const formattingAdvice = rejection === 'truncated'
       ? (input.language === 'en'
-        ? 'The model ran out of output tokens. Start over with a COMPLETE, concise answer under 110 words. Use no more than one tiny code snippet if necessary, and FINISH the sentence. Do not continue the cut-off answer.'
-        : 'O modelo atingiu o limite de tokens. Recomece com resposta COMPLETA de até 110 palavras; no máximo um exemplo de código minúsculo se necessário. Termine a frase. Não continue o texto interrompido.')
+        ? 'OUTPUT FORMAT FOR RETRY: TWO SHORT PROSE PARAGRAPHS MAX, 60 words total, no code, no headings, no lists, no preamble. Answer ONLY the latest learner question and finish each sentence. Do not continue the incomplete response.'
+        : 'FORMATO OBRIGATÓRIO NESTA TENTATIVA: NO MÁXIMO DOIS PARÁGRAFOS CURTOS, até 60 palavras no total, SEM código, SEM títulos, SEM listas, SEM introdução. Responda SOMENTE à dúvida atual e conclua cada frase. Não continue o texto interrompido.')
+      : rejection === 'rewritten_example'
+      ? input.language === 'en'
+        ? 'You changed a pre-existing educational code example. This is a RE-EXPLANATION, not permission to edit or regenerate code. Start over with a SHORT explanation in prose ONLY, using the identifiers and behavior that were actually observed. Do not write any code block or invent missing lines.'
+        : 'Você alterou o código de um exemplo anterior. Esta é uma REEXPLICAÇÃO, não um pedido para modificar código. Recomece com explicação CURTA apenas em prosa, usando os identificadores e comportamentos realmente observados. Não escreva blocos de código nem invente linhas ausentes.'
+      : rejection === 'unobserved_identifier'
+      ? input.language === 'en'
+        ? 'The explanation referenced a name not present in the PREVIOUS CODE. Use the exact observed class, field and method identifiers in explanatory prose. Do not translate, guess or invent names. Keep the explanation short and refer to only code you actually saw.'
+        : 'A explicação citou um nome ausente no CÓDIGO ANTERIOR. Use os nomes EXATOS das classes, métodos e atributos observados, inclusive na explicação. Não traduza nem invente identificadores. Responda brevemente.'
       : rejection === 'code'
       ? conceptualExampleAllowed(input.learnerText)
         ? (input.language === 'en'
@@ -158,9 +281,16 @@ export async function resolveDiscussion(input: DiscussionInput): Promise<{text: 
       // No deterministic 'answer' should camouflage an offline/disconnected model.
       throw e;
     }
-    const quality = discussionQuality(answer, input.learnerText, input.previousAnswer);
+    // Never mask an incomplete response. For a complete re-explanation, the
+    // app keeps the earlier code fixed and validates the resulting prose + code.
+    const anchored = anchorPriorExample(answer, input.learnerText, input.previousAnswer);
+    const basicQuality = discussionQuality(anchored.text, input.learnerText, input.previousAnswer);
+    const quality: RejectionReason = basicQuality !== 'valid' ? basicQuality
+      : rewritesPreviousExample(anchored.text, input.learnerText, input.previousAnswer) ? 'rewritten_example'
+      : unobservedExampleIdentifiers(anchored.text, input.learnerText, input.previousAnswer).length ? 'unobserved_identifier'
+      : 'valid';
     if (quality === 'valid') {
-      return {text: answer, origin: attempt === 0 ? 'model' : 'retry'};
+      return {text: anchored.text, origin: attempt === 0 ? 'model' : 'retry', ...(anchored.reused ? {codeReused:true} : {})};
     }
     input.onDiagnostic?.(attempt + 1, quality);
     rejection = quality;

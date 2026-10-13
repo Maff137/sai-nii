@@ -1,3 +1,57 @@
+## 0.2.10 (candidate — evidence-based critical review)
+
+- For code-review follow-ups, guide the offline model to inspect the constructor and concrete branch conditions rather than assume a particular implementation, and to distinguish ignored values, rejected operations, and runtime type errors.
+- Avoid fabricated execution outputs or speculative replacement code when learners ask to analyze technical limitations of an existing illustrative snippet.
+- Fix the synthetic review rubric: it no longer presupposes a `saldo_inicial` parameter that the generated example might not contain. Add opt-in human-review flags for claimed outputs and suspicious statements about rejected/ignored negative values. These flags **do not** check correctness.
+- No workspace edits, code execution, external services, or new personal-data storage.
+
+## 0.2.10 (candidate — grounded identifiers in explanations)
+
+- Follow-up translations now receive a bounded lexical glossary of observed code identifiers, independent of the spoken language. Only complete fenced educational examples qualify; prompts do not invent names.
+- A conservative lexical validator rejects code-styled identifiers introduced as methods, classes, or fields when absent from the previous example (e.g., changing `__saldo` to `__balance` in explanatory prose). This does not claim semantic verification and leaves generic terms alone.
+- The real VS Code discussion flow and synthetic offline benchmark use the same identifier hints and validator.
+- Technical follow-ups prioritize inspecting unvalidated initial state before speculating about requirements. No workspace edits, source execution, external services, or persisted raw conversations.
+
+## 0.2.10 (candidate — evidence-first technical follow-ups)
+
+- When asked to assess limitations of a previous example, focus on at most two limitations supported by the actual code rather than generating a replacement implementation or inventing business requirements.
+- Keep those review follow-ups short and explicit about the distinction between observed behavior and hypothetical requirements.
+- The synthetic Python scenario now flags absolute privacy/access claims and ungrounded authorization requirements for **human review only**. Regex flags do not prove accuracy or make a general fact checker.
+- Previous code-fidelity and bilingual behavior remain unchanged. Requires compilation, VS Code integration, and real-Qwen validation before publication.
+
+## v0.2.10 — Code-anchor reliability hotfix (pending real-model validation)
+
+- Keep educational code examples immutable during same-example translations and re-explanations. The model supplies new prose; the application reuses the original complete code fence byte-for-byte rather than publishing mutated strings, calls or initialization.
+- If the prior code fence is too large for safe reuse, omit regenerated code rather than inventing a translated version. Rewording is not authorization to edit workspace sources.
+- Report when immutable code reuse occurred, separately from whether a model response was accepted on its first attempt. This check does not establish technical truth of the surrounding prose.
+- Explicitly regression-test the real case of translated print strings and changing `João` to `John`.
+- An original explanatory answer can still contain mistakes; source editing and answer-unlock permissions are unchanged.
+
+## v0.2.10 (candidate hotfix — code fidelity and concise retries)
+
+- Compare executable lines of a reused educational example while permitting unchanged excerpts and comments translated into the learner's language; never accept altered statements or reordered executable lines.
+- Preserve bounded complete prior snippets up to 32 lines and 1550 characters instead of reducing ordinary 20-line examples to identifiers alone. Prefer the most substantial original snippet over a later two-line excerpt when a follow-up refers to the same example.
+- In a truncated-response retry, ask for at most two short prose paragraphs, no new code or lists; this is an instruction to the model rather than a guarantee that the model will follow it.
+- Automated tests remain lexical, not a semantic validator. Changes still require Mac/VS Code and real Qwen verification.
+
+## 0.2.10 (candidate — code-example fidelity refinement)
+
+- Rejects a changed fenced code example when the learner explicitly asks to re-explain the SAME code; the retry requests prose, not a newly generated implementation.
+- Retains observed code examples in compact conversational history for technical follow-ups referencing that example, even if the immediately previous turn contained no code.
+- Recognizes colloquial requests for the "same code" in Portuguese and English, not just the "same example".
+- Directs the model to avoid unsupported absolute claims about privacy, immutability or invariants and to keep explanations shorter. These are pedagogical instructions, not automatic verification.
+- Improves human-review criteria; all code comparisons are ephemeral and do not save transcripts or source.
+- The validator can detect literal changes to fenced code in translation; it cannot prove conceptual correctness or detect every paraphrased semantic inconsistency.
+
+## 0.2.10 (candidate — learner cues and code identity)
+
+- Adjust explanatory framing only when the student *explicitly* reports unfamiliarity, confusion, or existing familiarity in the current question (Portuguese or English). No scores, inferred global mastery, new stored attributes or intrusive quizzes.
+- Strengthen continuity instructions for translation/re-explanation: translate prose, preserve exact code identifiers, and avoid rewriting an example in a new language unless requested. These are model instructions, **not a guarantee** of semantic/code consistency.
+- Keep full educational code examples verbatim only when short. For longer examples, preserve a bounded list of observed identifiers, never fabricate a syntactically complete truncated code block.
+- Include regression tests for explicit-level cues, code identity, and long-example context. Add a synthetic PT–EN follow-up to evaluate preservation and advanced explanations; word/identifier signals remain only prompts for human review.
+- No change to source writing privileges, solution unlock, loopback network restriction, model installation or persistent memory.
+- Candidate requires full TypeScript build, VS Code integration and Qwen benchmark on the developer Mac.
+
 ## 0.2.9 (candidate — continuity and response proportionality)
 
 - Keep bounded history from the same project/file session. When a learner requests a translation or a re-explanation, preserve a compact copy of the **last educational example**, even if it appeared after a long introduction in the previous response.

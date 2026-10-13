@@ -5,7 +5,7 @@ const { performance } = require('node:perf_hooks');
 const { chooseLearnerLanguage, localizedSystem } = require('../dist/language.js');
 const { technicalReview, rubricFor } = require('./technical-review.cjs');
 const { INCOMPLETE_GENERATION } = require('../dist/generation.js');
-const { compactDiscussionHistory, dialogueInstruction } = require('../dist/dialogue.js');
+const { compactDiscussionHistory, dialogueInstruction, observedIdentifierInstruction } = require('../dist/dialogue.js');
 
 /** A small set of observable indicators. None proves semantic correctness or teaching quality. */
 function roughLanguage(answer, expected) {
@@ -50,7 +50,8 @@ async function evaluateScenario(scenario, generate, options = {}) {
     const turn = scenario.turns[index];
     const language = chooseLearnerLanguage(turn.prompt, previousLanguage);
     const auxiliary = informalInterpretation(turn.prompt);
-    const current = [`PEDIDO ATUAL DO ALUNO (PRIORIDADE): ${turn.prompt}`, auxiliary, dialogueInstruction(turn.prompt, language, history.some(item => item.role === 'assistant'))].filter(Boolean).join('\n\n');
+    const previousAnswer = [...history].reverse().find(m => m.role === 'assistant')?.content;
+    const current = [`PEDIDO ATUAL DO ALUNO (PRIORIDADE): ${turn.prompt}`, auxiliary, dialogueInstruction(turn.prompt, language, history.some(item => item.role === 'assistant')), observedIdentifierInstruction(previousAnswer ?? '', turn.prompt, language)].filter(Boolean).join('\n\n');
     const messages = [{ role: 'system', content: localizedSystem(language === 'en' ? DISCUSSION_SYSTEM_EN : DISCUSSION_SYSTEM, language) }, ...compactDiscussionHistory(history, turn.prompt), { role: 'user', content: current }];
     const rejectionReasons = [];
     // The evaluator uses fixed, synthetic prompts. Raw rejected generations are
@@ -62,7 +63,6 @@ async function evaluateScenario(scenario, generate, options = {}) {
       ? async messages => { latestGeneration = await generate(messages); return latestGeneration; }
       : generate;
     const start = performance.now();
-    const previousAnswer = [...history].reverse().find(m => m.role === 'assistant')?.content;
     const outcome = await resolveDiscussion({
       messages, learnerText: turn.prompt, previousAnswer, language,
       structuralQuestion: false, observedPaths: [],
@@ -74,7 +74,7 @@ async function evaluateScenario(scenario, generate, options = {}) {
     const elapsedMs = Math.round(performance.now() - start);
     const evaluation = indicators(outcome.text, turn, language);
     const technicalAlerts = technicalReview(outcome.text, turn);
-    turns.push({ turn: index + 1, requested_language: language, origin: outcome.origin, elapsed_ms: elapsedMs, rejected: rejectionReasons, ...evaluation,
+    turns.push({ turn: index + 1, requested_language: language, origin: outcome.origin, code_reused: outcome.codeReused === true, elapsed_ms: elapsedMs, rejected: rejectionReasons, ...evaluation,
       technical_review_flags: technicalAlerts,
       ...(options.includeRubric ? { human_review_rubric: rubricFor(turn) } : {}),
       ...(options.includeAnswers ? { answer: outcome.text } : {}),
@@ -94,6 +94,7 @@ function summarizeReport(results) {
     turns: turns.length,
     model_first_attempt: turns.filter(t => t.origin === 'model').length,
     model_retry: turns.filter(t => t.origin === 'retry').length,
+    immutable_code_reuses: turns.filter(t => t.code_reused).length,
     fallbacks: turns.filter(t => t.origin === 'fallback').length,
     potential_relevance_gaps: turns.filter(t => t.review_recommended).length,
     potential_language_mismatches: turns.filter(t => t.language_note.startsWith('possible_')).length,

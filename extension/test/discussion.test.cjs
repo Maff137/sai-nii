@@ -151,7 +151,7 @@ test('a token-budget truncated reply is rejected even if its text otherwise look
  let calls=0;const diagnostics=[];
  const result=await resolveDiscussion({messages:context,language:'en',learnerText:q,structuralQuestion:false,observedPaths:[],onDiagnostic:(attempt,reason)=>diagnostics.push([attempt,reason]),generate:async messages=>{
   calls++;
-  if(calls===2) assert.match(messages.at(-1).content,/out of output tokens.*COMPLETE, concise answer/s);
+  if(calls===2) assert.match(messages.at(-1).content,/OUTPUT FORMAT FOR RETRY: TWO SHORT PROSE PARAGRAPHS/);
   return calls===1 ? marked : 'Encapsulation controls access to internal state; abstraction presents essential capabilities. Both reduce complexity in different ways.';
  }});
  assert.equal(result.origin,'retry');assert.equal(calls,2);
@@ -165,4 +165,156 @@ test('a second unfinished response does not reach the learner',async()=>{
  const result=await resolveDiscussion({messages:context,language:'en',learnerText:q,structuralQuestion:false,observedPaths:[],generate:async()=>truncated});
  assert.equal(result.origin,'fallback');
  assert.doesNotMatch(result.text,/presenting an interface with a public method/);
+});
+
+test('code fidelity: an English re-explanation cannot silently rewrite a previous Python example',async()=>{
+ const original='```python\nclass ContaBancaria:\n    def __init__(self, saldo_inicial=0):\n        self.__saldo = saldo_inicial\n```';
+ const changed='The bank account example shows encapsulation.\n\n```python\nclass ContaBancaria:\n    def __init__(self):\n        self.__saldo = 0\n```\n\nOnly deposit can update the balance.';
+ const {rewritesPreviousExample}=require('../dist/discussion.js');
+ const q='Now explain the same code in English without renaming ContaBancaria';
+ assert.equal(rewritesPreviousExample(changed,q,original),true);
+ assert.equal(rewritesPreviousExample('Explanation only: ContaBancaria stores the balance.',q,original),false);
+ assert.equal(rewritesPreviousExample('A distinct example:\n'+changed,'Show a different example',original),false);
+ let calls=0, reason='';
+ const result=await resolveDiscussion({messages:context,language:'en',learnerText:q,previousAnswer:original,structuralQuestion:false,observedPaths:[],
+  onDiagnostic:(_attempt,why)=>reason=why,
+  generate:async messages=>{calls++;if(calls===2) assert.match(messages.at(-1).content,/prose ONLY/);return calls===1?changed:'The original ContaBancaria initializer accepts saldo_inicial, and __saldo stores that supplied initial amount. The public methods control ordinary changes to this stored state.';}});
+ assert.equal(result.origin,'model');assert.equal(calls,1);assert.equal(reason,'');
+ assert.equal(result.codeReused,true);
+ assert.doesNotMatch(result.text,/self.__saldo = 0/);
+ assert.match(result.text,/self.__saldo = saldo_inicial/);
+});
+
+test('verbatim reuse is allowed, but unrelated discussions do not block different examples',async()=>{
+ const {rewritesPreviousExample}=require('../dist/discussion.js');
+ const earlier='A complete short example:\n```python\nclass A:\n    pass\n```';
+ const same='The exact example is still useful:\n```python\nclass A:\n    pass\n```\nIt shows a class declaration.';
+ const q='Now explain the same code in English';
+ assert.equal(rewritesPreviousExample(same,q,earlier),false);
+ assert.equal(rewritesPreviousExample(same,'What is a Python class?',earlier),false);
+});
+
+
+test('translation preserves unchanged executable lines even when comments are translated',()=>{
+ const {rewritesPreviousExample}=require('../dist/discussion.js');
+ const original='Original example:\n```python\nclass ContaBancaria:\n    def __init__(self, titular, saldo_inicial=0):\n        self.titular = titular\n        self.__saldo = saldo_inicial  # Saldo privado\n    def depositar(self, valor):\n        if valor > 0:\n            self.__saldo += valor\n# Uso\nconta = ContaBancaria("João", 100)\nconta.depositar(50)\n```';
+ const q='Now explain that in English using the same example';
+ const copied=original.replace('Saldo privado','Private balance').replace('# Uso','# Usage');
+ assert.equal(rewritesPreviousExample(copied,q,original),false);
+ const excerpt='The example uses a bank account.\n```python\nconta = ContaBancaria("João", 100)\nconta.depositar(50)\n```\nThe account is initialized and then gets a deposit.';
+ assert.equal(rewritesPreviousExample(excerpt,q,original),false);
+ const changed=original.replace('self.__saldo = saldo_inicial','self.__saldo = 0');
+ assert.equal(rewritesPreviousExample(changed,q,original),true);
+ const reversed='Explanation.\n```python\nconta.depositar(50)\nconta = ContaBancaria("João", 100)\n```\nThis should not be reordered.';
+ assert.equal(rewritesPreviousExample(reversed,q,original),true);
+ const withStringChange=original.replace('"João", 100','"João", 10');
+ assert.equal(rewritesPreviousExample(withStringChange,q,original),true);
+});
+
+test('regression: previously rejected original excerpt with translated comment is accepted without retries',async()=>{
+ const previous='Previous explanatory example.\n```python\nclass ContaBancaria:\n    def __init__(self, titular, saldo_inicial=0):\n        self.titular = titular\n        self.__saldo = saldo_inicial\n    def depositar(self, valor):\n        if valor > 0:\n            self.__saldo += valor\n# Uso\nconta = ContaBancaria("João", 100)\nconta.depositar(50)\n```';
+ const next='The bank account example initializes the balance and allows deposits through a public method.\n```python\n# Using the class\nconta = ContaBancaria("João", 100)\nconta.depositar(50)\n```\nThis unchanged portion creates an account and calls depositar.';
+ const q='Now explain the same code in English';
+ let calls=0;
+ const result=await resolveDiscussion({messages:context,learnerText:q,previousAnswer:previous,language:'en',structuralQuestion:false,observedPaths:[],generate:async()=>{calls++;return next;}});
+ assert.equal(result.origin,'model');assert.equal(calls,1);
+});
+
+test('truncation retry explicitly requests two prose paragraphs without code',async()=>{
+ const {markIncompleteGeneration}=require('../dist/generation.js');
+ const q='Quais limitações técnicas desse exemplo?';
+ const original=markIncompleteGeneration('Uma possível limitação envolve o estado interno e', 'length');
+ let attempts=0;
+ const result=await resolveDiscussion({messages:context,learnerText:q,language:'pt',structuralQuestion:false,observedPaths:[],generate:async messages=>{
+   attempts++;
+   if(attempts===2){assert.match(messages.at(-1).content,/ATÉ DOIS PARÁGRAFOS|NO MÁXIMO DOIS PARÁGRAFOS/);assert.match(messages.at(-1).content,/SEM código/);}
+   return attempts===1?original:'O exemplo permite receber dados iniciais sem validação. Encapsulamento restringe o acesso convencional, mas não garante por si só que todos os valores sejam válidos.';
+ }});
+ assert.equal(result.origin,'retry');assert.equal(attempts,2);
+});
+
+
+test('real benchmark regression: translated Python strings are restored without a retry', async()=>{
+ const {anchorPriorExample}=require('../dist/discussion.js');
+ const oldCode='```python\nclass ContaBancaria:\n    def __init__(self, titular):\n        self.titular = titular\n        self.__saldo = 0  # Saldo privado\n    def depositar(self, valor):\n        if valor > 0:\n            self.__saldo += valor\n            print(f"Depósito de {valor} realizado")\nconta = ContaBancaria("João")\nconta.depositar(100)\n```';
+ const earlier='Encapsulamento controla o estado interno.\n\n'+oldCode+'\n\nO método protege alterações usuais.';
+ const english='The ContaBancaria example uses __saldo and depositar to control the account balance.\n\n```python\nclass ContaBancaria:\n    def __init__(self, titular):\n        self.titular = titular\n        self.__saldo = 0  # Private balance\n    def depositar(self, valor):\n        if valor > 0:\n            self.__saldo += valor\n            print(f"Deposit of {valor} made")\nconta = ContaBancaria("John")\nconta.depositar(100)\n```\n\nOnly depositar changes the balance in this example.';
+ const q='Now explain the same code in English, without renaming ContaBancaria, __saldo or depositar.';
+ const anchored=anchorPriorExample(english,q,earlier);
+ assert.equal(anchored.reused,true);
+ assert.ok(anchored.text.includes(oldCode));
+ assert.doesNotMatch(anchored.text,/"John"|Deposit of/);
+ let calls=0;
+ const result=await resolveDiscussion({messages:context,language:'en',learnerText:q,previousAnswer:earlier,structuralQuestion:false,observedPaths:[],generate:async()=>{calls++;return english;}});
+ assert.equal(calls,1);
+ assert.equal(result.origin,'model');
+ assert.equal(result.codeReused,true);
+ assert.ok(result.text.includes(oldCode));
+});
+
+test('code-only translations are not accepted by deterministic reuse', async()=>{
+ const {anchorPriorExample}=require('../dist/discussion.js');
+ const previous='```python\nclass A:\n    pass\n```';
+ const candidate='```python\nclass A:\n    print("translated")\n```';
+ const result=anchorPriorExample(candidate,'Now explain the same example in English',previous);
+ assert.equal(result.reused,true);
+ assert.equal(result.text,previous);
+ assert.equal(discussionQuality(result.text,'Now explain the same example in English'),'code');
+});
+
+test('code change is not silently repaired in a request for a new example',()=>{
+ const {anchorPriorExample}=require('../dist/discussion.js');
+ const reply='A new example with code:\n```python\nclass B:\n    pass\n```\nThat is a different class.';
+ const before='```python\nclass A:\n    pass\n```';
+ const anchored=anchorPriorExample(reply,'Show a different example',before);
+ assert.equal(anchored.reused,false);
+ assert.equal(anchored.text,reply);
+});
+
+test('too-large prior code stays in conversation; translated regeneration is dropped',()=>{
+ const {anchorPriorExample}=require('../dist/discussion.js');
+ const original='```python\n'+Array.from({length:45},(_,i)=>`line_${i} = ${i}`).join('\n')+'\n```';
+ const candidate='This earlier block illustrates how variables are assigned.\n```python\nline_0 = 999\n```\nI will focus on its mechanism rather than reconstruct it.';
+ const result=anchorPriorExample(candidate,'explain the same code in English',original);
+ assert.equal(result.reused,true);
+ assert.doesNotMatch(result.text,/line_0 = 999|line_0 = 0/);
+ assert.match(result.text,/illustrates how variables/);
+});
+
+
+test('multiple distinct earlier code blocks are never arbitrarily substituted',()=>{
+ const {anchorPriorExample}=require('../dist/discussion.js');
+ const previous='```python\nclass A:\n    pass\n```\nSecond example:\n```python\nclass B:\n    pass\n```';
+ const reply='The previous example uses an interface.\n```python\nclass C:\n    pass\n```\nEach demonstration illustrates a separate design.';
+ const anchored=anchorPriorExample(reply,'Now explain the same examples in English',previous);
+ assert.equal(anchored.reused,true);
+ assert.doesNotMatch(anchored.text,/class A|class B|class C/);
+ assert.match(anchored.text,/previous example uses an interface/);
+});
+
+
+test('translated prose cannot refer to invented fields or methods absent from the educational example', async () => {
+ const { unobservedExampleIdentifiers } = require('../dist/discussion.js');
+ const old = 'An account demonstration:\n```python\nclass ContaBancaria:\n    def __init__(self, titular, saldo_inicial=0):\n        self.titular = titular\n        self.__saldo = saldo_inicial\n    def depositar(self, valor):\n        self.__saldo += valor\n```';
+ const q = 'Now explain the same code in English without renaming names';
+ const bad = 'In the `ContaBancaria` class, the `__balance` attribute stores the amount and the `deposit` method changes it.';
+ assert.deepEqual(unobservedExampleIdentifiers(bad, q, old), ['__balance','deposit']);
+ assert.deepEqual(unobservedExampleIdentifiers('The `__saldo` attribute is changed by the `depositar` method.', q, old), []);
+ assert.deepEqual(unobservedExampleIdentifiers('`private` is a language feature, but this code has `__saldo`.', q, old), []);
+ assert.deepEqual(unobservedExampleIdentifiers(bad,'What is encapsulation?',old), []);
+ let attempts=0; const observed=[];
+ const outcome = await resolveDiscussion({messages:context, language:'en', learnerText:q, previousAnswer:old, structuralQuestion:false, observedPaths:[],
+  onDiagnostic:(_,why)=>observed.push(why), generate:async messages=>{
+   attempts++;if (attempts===2) assert.match(messages.at(-1).content,/exact observed class, field and method identifiers/);
+   return attempts===1 ? bad : 'In `ContaBancaria`, the `__saldo` attribute holds state while the `depositar` method changes that state through the defined interface.';
+ }});
+ assert.equal(outcome.origin,'retry');assert.equal(attempts,2);assert.deepEqual(observed,['unobserved_identifier']);
+});
+
+test('actual code styling and correct unchanged names do not trigger false identifier flags', () => {
+ const { unobservedExampleIdentifiers } = require('../dist/discussion.js');
+ const old = '```js\nclass Account {\n  deposit(amount) {\n    this.balance += amount;\n  }\n}\n```';
+ const q = 'Explain the same example in Portuguese';
+ assert.deepEqual(unobservedExampleIdentifiers('A classe `Account` contém o atributo `balance` e o método `deposit`.',q,old),[]);
+ assert.deepEqual(unobservedExampleIdentifiers('A classe `Account` contém o atributo `saldo` e o método `deposit`.',q,old),['saldo']);
 });

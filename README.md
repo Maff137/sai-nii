@@ -1,6 +1,6 @@
-## Current candidate: v0.2.9 — Natural dialogue continuity
+## Current candidate: v0.2.10 — Learner adaptation and example fidelity
 
-- Preserves the last example across translation/rephrasing follow-ups using bounded, session-only context; otherwise keeps conversation snippets small.
+- Preserves observed examples across translations and technical follow-ups using bounded session-only context. When the learner asks to explain the SAME code, a rewritten fenced example is rejected and retried as prose; this is a literal identity check, not a semantic fact checker.
 - Uses adaptive verbosity instructions in both Portuguese and English for brief, normal and detailed explanations, without treating word count as proof of quality.
 - A new synthetic scenario `pt-en-same-example` tests continuity of a bank-account example, with human review still required. No solution authorization change.
 - The model should normally use concise explanations instead of huge code-heavy lists. All results still require full TypeScript and VS Code integration validation on the user's Mac.
@@ -11,9 +11,11 @@
 
 Sai-nii is an open-source project focused on helping you reason about **your own code**, not writing it for you. It aims to work on macOS, Windows, and Ubuntu with local models and no account or cloud API.
 
+- v0.2.10: Respond to explicit beginner/experienced cues without assigning a proficiency level; when translating a lesson, retain code identifiers and do not present clipped snippets as complete code. Validate the new `pt-level-and-code` scenario using the local Qwen model.
+
 ## Development status
 
-**Pre-alpha v0.2.9 (developer preview).** The current extension provides a sidebar, reads bounded context from the active file and local Git repository, calls an *already running* `llama.cpp` OpenAI-compatible server on loopback, and implements an initial solution-release gate and a local, project-scoped memory of learning interactions. Unlike earlier versions, Socratic questions are not mandatory on every turn. This is not yet a one-click installer, a full pedagogical engine, or a validated release. See [product specification](docs/Sai-nii_SPEC_v1.1.md) and [implementation notes](docs/DEVELOPMENT.md).
+**Pre-alpha v0.2.10 (developer preview).** The current extension provides a sidebar, reads bounded context from the active file and local Git repository, calls an *already running* `llama.cpp` OpenAI-compatible server on loopback, and implements an initial solution-release gate and a local, project-scoped memory of learning interactions. Unlike earlier versions, Socratic questions are not mandatory on every turn. This is not yet a one-click installer, a full pedagogical engine, or a validated release. See [product specification](docs/Sai-nii_SPEC_v1.1.md) and [implementation notes](docs/DEVELOPMENT.md).
 
 ## Try the development extension
 
@@ -92,3 +94,10 @@ Diagnostic for fixed offline synthetic benchmarks: `cd extension && npm run eval
 ## v0.2.8 — Explanatory code examples (candidate)
 
 Conceptual tutoring can now display short, independent code examples that teach a concept. This is distinct from giving the learner the solution to a concrete project task, which remains gated by an explicit request, a substantive attempt and a blocker. The code is rendered as inert text, never executed or written to the workspace. The small heuristic checker is a limited safeguard, not a semantic guarantee.
+
+
+Development note: v0.2.10 evaluates evidence-grounded reviews of previous examples; technical-review flags are indicative, not automatic proof of truth.
+
+### v0.2.10 (candidate) — revisão crítica fundamentada
+
+As análises de limitações devem referir-se ao construtor e às condições presentes no exemplo real da conversa. O benchmark sintético sinaliza saídas de execução alegadas para revisão humana, sem afirmar que detecta automaticamente a verdade de uma explicação.

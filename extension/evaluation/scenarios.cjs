@@ -142,5 +142,18 @@ const scenarios = [
     ]
   }
 
+  ,{
+    id: 'pt-level-and-code', language:'pt', experimental:true,
+    label:'Adaptação explícita ao aluno e código estável na tradução',
+    turns:[
+      {prompt:'Sou iniciante e nunca vi encapsulamento. Mostra um exemplo bem pequeno de conta bancária em Python, com atributo __saldo e método depositar.',
+       signals:[/saldo|depositar|encapsul|estado|acesso/i],technicalReview:{rubric:['Explicar os termos para quem declarou desconhecimento; no máximo um trecho curto, sem solução de projeto real.','Não alegar que __saldo em Python é inacessível em absoluto; há name mangling.'],watch:[{id:'python_access_guarantee_needs_review',pattern:/imut[aá]vel|inacess[ií]vel|cannot be accessed|n[aã]o pode ser acessad/i}]}},
+      {prompt:'Now explain the same code in English, without renaming ContaBancaria, __saldo or depositar.',
+       signals:[/ContaBancaria|__saldo|depositar/i],technicalReview:{rubric:['Traduzir a explicação para inglês, mantendo os identificadores do exemplo original tanto no código quanto na prosa.','Não criar outra implementação com nomes novos se o aluno pediu o mesmo código. Mudanças na assinatura, inicialização ou comportamento contam como reescrita, mesmo com nomes iguais.']}},
+      {prompt:'ja entendi o basico. agora explica as limitações técnicas desse exemplo, sem repetir o começo.',
+       signals:[/python|encapsul|privad|mangl|acesso|atribut|limit|valid/i],technicalReview:{rubric:['Responder à dúvida técnica atual, evitando repetir a definição para iniciantes.', 'Inspecionar o construtor REAL do exemplo anterior antes de afirmar ausência de validação inicial. Se ele só inicializa __saldo com zero, não inventar um parâmetro saldo_inicial; se aceita saldo_inicial, observar a validação de fato.', 'Verificar ramos e operações: valores negativos ignorados, valores rejeitados por condição e erros de tipo não são sinônimos. Se citar um resultado numérico, conferir a aritmética e o retorno real do método.', 'Em Python, __saldo sofre name mangling, não privacidade absoluta; não introduzir autorização de titular sem requisito explícito.'], watch:[{id:'python_absolute_access_needs_review',pattern:/\b(?:imposs[ií]vel|impossibil\w*|inacess[ií]vel|n[aã]o\s+(?:pode|consegue|e\s+poss[ií]vel)\s+ser\s+acessad\w*|only\s+accessible|cannot\s+be\s+accessed)\b/i},{id:'unobserved_authorization_needs_review',pattern:/\b(?:permiss[aã]o|autoriza[cç][aã]o|permission|authorization)\b/i},{id:'runtime_output_claim_needs_review',pattern:/(?:\b(?:sa[ií]da|output|resultado\s+(?:ser[aá]|foi))\s*[:=]|print\(conta\.depositar\s*\()/i},{id:'rejection_vs_ignore_needs_review',pattern:/\b(?:valor(?:es)?\s+negativ\w*|negative\s+(?:amount|value))\b.{0,120}\b(?:n[aã]o\s+rejeit\w*|not\s+reject\w*|accept\w*)/i}]}}
+    ]
+  }
+
 ];
 module.exports = { scenarios };

@@ -11,7 +11,7 @@ import { DISCUSSION_SYSTEM, DISCUSSION_SYSTEM_EN, projectStructureQuestion, reso
 import { informalInterpretation } from './informal';
 import { resolveGuidance } from './recovery';
 import { LearnerLanguage, chooseLearnerLanguage, localizedSystem } from './language';
-import { compactDiscussionHistory, dialogueInstruction } from './dialogue';
+import { compactDiscussionHistory, dialogueInstruction, observedIdentifierInstruction } from './dialogue';
 
 class SaiNiiView implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
@@ -117,6 +117,7 @@ class SaiNiiView implements vscode.WebviewViewProvider {
         `PEDIDO ATUAL DO ALUNO (PRIORIDADE): ${text.slice(0, 1800)}`,
         isArchitecture ? informalInterpretation(text) : '',
         isArchitecture ? dialogueInstruction(text, answerLanguage, relevantHistory.some(item => item.role === 'assistant')) : '',
+        isArchitecture ? observedIdentifierInstruction([...relevantHistory].reverse().find(item => item.role === 'assistant')?.content ?? '', text, answerLanguage) : '',
         plan?.instruction ?? ''
       ].filter(Boolean).join('\n\n');
       const priorTurns: ChatMessage[] = isArchitecture
@@ -137,6 +138,7 @@ class SaiNiiView implements vscode.WebviewViewProvider {
         });
         answer = outcome.text;
         origin = outcome.origin;
+        if (outcome.codeReused) this.diagnosticOutput.appendLine('Exemplo didático anterior reutilizado sem alterações de código.');
         this.diagnosticOutput.appendLine(`Conversa conceitual: origem=${origin}; pergunta_de_estrutura=${projectStructureQuestion(text)}`);
       } else {
         const outcome = await resolveGuidance({

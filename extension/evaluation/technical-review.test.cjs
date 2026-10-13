@@ -123,3 +123,29 @@ test('two-turn misconception dialogue is evaluated with real conversation histor
   assert.ok(report.turns.every(turn => turn.answer === undefined));
   assert.equal(summarizeReport([report]).turns_for_technical_review,2);
 });
+
+test('real-device inaccurate followup gets technical review despite zero relevance gaps',()=>{
+ const t=turn('pt-level-and-code',2);
+ const inaccurate='Uma limitação é a impossibilidade de acessar diretamente o atributo __saldo de fora da classe. O método depositar não verifica se o titular tem permissão.';
+ const flags=technicalReview(inaccurate,t);
+ assert.ok(flags.includes('python_absolute_access_needs_review'));
+ assert.ok(flags.includes('unobserved_authorization_needs_review'));
+ const accurate='O construtor aceita saldo_inicial sem validar; um valor negativo pode iniciar saldo negativo. __saldo usa name mangling, mas ainda é acessível pelo nome transformado.';
+ assert.deepEqual(technicalReview(accurate,t),[]);
+ assert.match(rubricFor(t).join(' '),/name mangling/);
+});
+
+
+test('critical follow-up flags unsupported runtime output claims without pretending to verify arithmetic', () => {
+  const question = turn('pt-level-and-code', 2);
+  const flawed = 'Se tentar depositar um valor negativo, o método não rejeitará a operação.\n```python\nprint(conta.depositar(50)) # Saída: 40\n```';
+  const flags = technicalReview(flawed, question);
+  assert.ok(flags.includes('runtime_output_claim_needs_review'));
+  assert.ok(flags.includes('rejection_vs_ignore_needs_review'));
+  const sound = 'O teste valor > 0 ignora depósitos negativos; uma string causaria TypeError. O atributo __saldo usa name mangling.';
+  assert.deepEqual(technicalReview(sound, question), []);
+  const rubric = rubricFor(question).join(' ');
+  assert.match(rubric, /construtor REAL/);
+  assert.match(rubric, /Se ele só inicializa __saldo com zero/);
+  assert.match(rubric, /retorno real do método/);
+});

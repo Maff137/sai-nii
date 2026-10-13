@@ -141,3 +141,43 @@ test('real harness retains the previous teaching example when student changes ex
  });
  assert.equal(report.turns[1].origin,'model');assert.equal(step,2);
 });
+
+test('live-equivalent benchmark preserves original code when translated model code is changed', async()=>{
+ const scenario={id:'synthetic-code-fidelity',language:'pt',label:'same code',turns:[
+  {prompt:'Explique encapsulamento com um exemplo da classe ContaBancaria',signals:[]},
+  {prompt:'Now explain the same code in English, without changing its values',signals:[]}
+ ]};
+ const original='An independent educational example:\n```python\nclass ContaBancaria:\n    def __init__(self, saldo_inicial=0):\n        self.__saldo = saldo_inicial\n```\nThe initial balance comes from the parameter.';
+ const changed='The same educational account example:\n```python\nclass ContaBancaria:\n    def __init__(self):\n        self.__saldo = 0\n```\nThis sets the balance to zero.';
+ let calls=0;
+ const report=await evaluateScenario(scenario,async messages=>{
+  calls++;
+  return calls===1?original:calls===2?changed:'The original ContaBancaria constructor has a saldo_inicial parameter and assigns its value to __saldo. This is the behavior of the original example, not a new version of the code.';
+ });
+ assert.equal(calls,2);
+ assert.equal(report.turns[1].origin,'model');
+ assert.equal(report.turns[1].code_reused,true);
+ assert.deepEqual(report.turns[1].rejected,[]);
+ assert.equal(report.turns[1].answer,undefined);
+ assert.equal(summarizeReport([report]).immutable_code_reuses,1);
+});
+
+test('benchmark and VS Code follow-up use the same code-name grounding rather than approving English aliases', async()=>{
+ const scenario={id:'synthetic-name-grounding',language:'pt',label:'exact identifiers',turns:[
+  {prompt:'Me explica o encapsulamento com a classe ContaBancaria.',signals:[]},
+  {prompt:'Now explain the same code in English without changing its identifiers.',signals:[]}
+ ]};
+ const previous='This independent example controls a balance.\n```python\nclass ContaBancaria:\n    def __init__(self):\n        self.__saldo = 0\n    def depositar(self, valor):\n        self.__saldo += valor\n```\nThe deposit method changes the internal state.';
+ let count=0;
+ const report=await evaluateScenario(scenario,async messages=>{
+   count++;
+   if(count===2) assert.match(messages.at(-1).content,/IDENTIFIERS OBSERVED IN THE PRIOR EXAMPLE/);
+   if(count===3) assert.match(messages.at(-1).content,/exact observed class, field and method identifiers/);
+   return count===1?previous:count===2?'The `__balance` attribute is updated by the `deposit` method.':
+     'In `ContaBancaria`, the `__saldo` attribute is updated through the `depositar` method, which controls changes to that internal state.';
+ });
+ assert.equal(count,3);
+ assert.equal(report.turns[1].origin,'retry');
+ assert.deepEqual(report.turns[1].rejected,[{attempt:1,reason:'unobserved_identifier'}]);
+ assert.equal(report.turns[1].answer,undefined);
+});

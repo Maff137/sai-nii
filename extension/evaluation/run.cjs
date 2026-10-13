@@ -57,7 +57,7 @@ async function main(argv) {
     const report = await evaluateScenario(scenario, generate, options);
     reports.push(report);
     for (const turn of report.turns) {
-      console.log(`  Etapa ${turn.turn}: origem=${turn.origin}; idioma=${turn.requested_language}; tempo=${(turn.elapsed_ms / 1000).toFixed(1)}s; cobertura=${turn.signal_groups_matched ?? 'n/a'}/${turn.signal_groups_total}; sinal_idioma=${turn.language_note}; alertas=${turn.rejected.map(r => r.reason).join(',') || 'nenhum'}; revisao_tecnica=${turn.technical_review_flags.join(',') || 'nenhuma'}`);
+      console.log(`  Etapa ${turn.turn}: origem=${turn.origin}; codigo_preservado=${turn.code_reused ? 'sim' : 'não'}; idioma=${turn.requested_language}; tempo=${(turn.elapsed_ms / 1000).toFixed(1)}s; cobertura=${turn.signal_groups_matched ?? 'n/a'}/${turn.signal_groups_total}; sinal_idioma=${turn.language_note}; alertas=${turn.rejected.map(r => r.reason).join(',') || 'nenhum'}; revisao_tecnica=${turn.technical_review_flags.join(',') || 'nenhuma'}`);
       if (turn.human_review_rubric?.length) console.log(`  CRITÉRIOS PARA REVISÃO HUMANA (não avaliados automaticamente):\n${turn.human_review_rubric.map(t => `    - ${t}`).join('\n')}`);
       if (turn.rejected_answers?.length) for (const rejected of turn.rejected_answers) {
         console.log(`  TENTATIVA REJEITADA ${rejected.attempt} (${rejected.reason}; apenas cenário sintético):\n${rejected.text}\n`);
