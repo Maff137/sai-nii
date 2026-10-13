@@ -1,0 +1,99 @@
+{
+  "name": "sai-nii",
+  "displayName": "Sai-nii",
+  "description": "An offline, Socratic programming tutor for your real projects.",
+  "version": "0.0.1",
+  "private": true,
+  "publisher": "sai-nii",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Education",
+    "Other"
+  ],
+  "keywords": [
+    "offline",
+    "socratic",
+    "tutor",
+    "local-llm",
+    "coding"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onView:sainii.sidebar",
+    "onCommand:sainii.ask",
+    "onCommand:sainii.analyzeSelection"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sainii",
+          "title": "Sai-nii",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "sainii": [
+        {
+          "id": "sainii.sidebar",
+          "name": "Professor",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "sainii.ask",
+        "title": "Sai-nii: Perguntar"
+      },
+      {
+        "command": "sainii.analyzeSelection",
+        "title": "Sai-nii: Analisar seleção"
+      },
+      {
+        "command": "sainii.clearMemory",
+        "title": "Sai-nii: Apagar memória local"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "sainii.analyzeSelection",
+          "group": "navigation@sainii",
+          "when": "editorHasSelection"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Sai-nii",
+      "properties": {
+        "sainii.serverPort": {
+          "type": "integer",
+          "default": 8080,
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Porta do llama-server no próprio computador (127.0.0.1)."
+        },
+        "sainii.model": {
+          "type": "string",
+          "default": "local",
+          "description": "Identificador do modelo exposto pelo llama-server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "compile": "tsc -p .",
+    "test": "npm run compile && node --test test/*.test.cjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.95.0",
+    "typescript": "^5.7.0"
+  }
+}
