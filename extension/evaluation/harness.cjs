@@ -6,6 +6,7 @@ const { chooseLearnerLanguage, localizedSystem } = require('../dist/language.js'
 const { technicalReview, rubricFor } = require('./technical-review.cjs');
 const { INCOMPLETE_GENERATION } = require('../dist/generation.js');
 const { compactDiscussionHistory, dialogueInstruction, observedIdentifierInstruction } = require('../dist/dialogue.js');
+const { routeTurn } = require('../dist/routing.js');
 
 /** A small set of observable indicators. None proves semantic correctness or teaching quality. */
 function roughLanguage(answer, expected) {
@@ -46,9 +47,13 @@ async function evaluateScenario(scenario, generate, options = {}) {
   const history = [];
   const turns = [];
   let previousLanguage = scenario.language ?? 'pt';
+  let previousMode;
   for (let index = 0; index < scenario.turns.length; index++) {
     const turn = scenario.turns[index];
     const language = chooseLearnerLanguage(turn.prompt, previousLanguage);
+    const routed = scenario.activeEditor ? routeTurn(turn.prompt, { editorOpen: true, previousMode }) : null;
+    if (routed && routed.mode !== 'discussion') throw new Error(`Scenario ${scenario.id}: conceptual evaluator cannot impersonate code-guidance mode (${routed.mode})`);
+    if (routed && turn.expectedMode && routed.mode !== turn.expectedMode) throw new Error(`Scenario ${scenario.id}: expected ${turn.expectedMode}, got ${routed.mode}`);
     const auxiliary = informalInterpretation(turn.prompt);
     const previousAnswer = [...history].reverse().find(m => m.role === 'assistant')?.content;
     const current = [`PEDIDO ATUAL DO ALUNO (PRIORIDADE): ${turn.prompt}`, auxiliary, dialogueInstruction(turn.prompt, language, history.some(item => item.role === 'assistant')), observedIdentifierInstruction(previousAnswer ?? '', turn.prompt, language)].filter(Boolean).join('\n\n');
@@ -74,12 +79,13 @@ async function evaluateScenario(scenario, generate, options = {}) {
     const elapsedMs = Math.round(performance.now() - start);
     const evaluation = indicators(outcome.text, turn, language);
     const technicalAlerts = technicalReview(outcome.text, turn);
-    turns.push({ turn: index + 1, requested_language: language, origin: outcome.origin, code_reused: outcome.codeReused === true, elapsed_ms: elapsedMs, rejected: rejectionReasons, ...evaluation,
+    turns.push({ turn: index + 1, ...(routed ? { routing_mode: routed.mode, simulated_editor: true } : {}), requested_language: language, origin: outcome.origin, code_reused: outcome.codeReused === true, elapsed_ms: elapsedMs, rejected: rejectionReasons, ...evaluation,
       technical_review_flags: technicalAlerts,
       ...(options.includeRubric ? { human_review_rubric: rubricFor(turn) } : {}),
       ...(options.includeAnswers ? { answer: outcome.text } : {}),
       ...(options.includeRejected ? { rejected_answers: rejectedAnswers } : {}) });
     previousLanguage = language;
+    if (routed) previousMode = routed.mode;
     if (outcome.origin !== 'fallback') {
       history.push({ role: 'user', content: turn.prompt }, { role: 'assistant', content: outcome.text });
     }

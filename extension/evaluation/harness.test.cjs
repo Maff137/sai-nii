@@ -181,3 +181,20 @@ test('benchmark and VS Code follow-up use the same code-name grounding rather th
  assert.deepEqual(report.turns[1].rejected,[{attempt:1,reason:'unobserved_identifier'}]);
  assert.equal(report.turns[1].answer,undefined);
 });
+
+test('conceptual benchmark simulates an open editor without silently changing to code-guidance mode', async () => {
+  const scenario = scenarios.find(s => s.id === 'editor-concepts');
+  assert.ok(scenario?.activeEditor, 'explicitly simulated editor, not a real workspace');
+  let count = 0;
+  const result = await evaluateScenario(scenario, async messages => {
+    count++;
+    assert.equal(messages[0].role, 'system');
+    return count === 1
+      ? 'Encapsulamento organiza o acesso ao estado de objetos. Uma classe pode expor métodos que validam atualizações e manter suas estruturas internas fora da interface pública.'
+      : 'Encapsulation organizes controlled access to object state. A class can expose operations to validate state changes while keeping implementation details behind a small interface.';
+  });
+  assert.equal(count, 2);
+  assert.deepEqual(result.turns.map(t => t.routing_mode), ['discussion', 'discussion']);
+  assert.ok(result.turns.every(t => t.simulated_editor === true));
+  assert.deepEqual(result.turns.map(t => t.requested_language), ['pt', 'en']);
+});

@@ -101,3 +101,8 @@ Development note: v0.2.10 evaluates evidence-grounded reviews of previous exampl
 ### v0.2.10 (candidate) — revisão crítica fundamentada
 
 As análises de limitações devem referir-se ao construtor e às condições presentes no exemplo real da conversa. O benchmark sintético sinaliza saídas de execução alegadas para revisão humana, sem afirmar que detecta automaticamente a verdade de uma explicação.
+
+
+### v0.2.11 — Roteamento por intenção
+
+Dúvidas sobre conceitos seguem o professor conversacional, mesmo com um editor aberto, sem ler o arquivo por padrão. Pedidos de análise do código ou execução de uma tarefa mantêm o modo de pistas, condicionado à presença de um arquivo do projeto. Perguntas arquiteturais usam a visão da raiz. A seleção do modo é heurística conservadora, não uma análise semântica ou autorização para fornecer soluções.

@@ -6,11 +6,11 @@ import { createHtml, assistantBlocks } from './webview';
 import { LearnerMemory, projectIdentity } from './memory';
 import { learningKind } from './learning';
 import { GUIDANCE_SYSTEM, GUIDANCE_SYSTEM_EN, SOLUTION_SYSTEM, SOLUTION_SYSTEM_EN, guidanceText, releaseAllowed, SolutionRequest, planGuidance, GuidanceProgress } from './pedagogy';
-import { architectureIntent } from './architecture';
 import { DISCUSSION_SYSTEM, DISCUSSION_SYSTEM_EN, projectStructureQuestion, resolveDiscussion } from './discussion';
 import { informalInterpretation } from './informal';
 import { resolveGuidance } from './recovery';
 import { LearnerLanguage, chooseLearnerLanguage, localizedSystem } from './language';
+import { routeTurn, TeachingMode, RoutingDecision } from './routing';
 import { compactDiscussionHistory, dialogueInstruction, observedIdentifierInstruction } from './dialogue';
 
 class SaiNiiView implements vscode.WebviewViewProvider {
@@ -20,6 +20,8 @@ class SaiNiiView implements vscode.WebviewViewProvider {
   private history = new Map<string, ChatMessage[]>();
   private progress = new Map<string, GuidanceProgress>();
   private replyLanguages = new Map<string, LearnerLanguage>();
+  private lastProjectModes = new Map<string, TeachingMode>();
+  private lastProjectLanguages = new Map<string, LearnerLanguage>();
   private memory: LearnerMemory;
   private readonly diagnosticOutput = vscode.window.createOutputChannel('Sai-nii: diagnóstico');
 
@@ -86,41 +88,51 @@ class SaiNiiView implements vscode.WebviewViewProvider {
       await this.memory.initialize();
       const workspace = this.currentWorkspace();
       const currentEditor = vscode.window.activeTextEditor;
-      const overviewRequested = architectureIntent(text) || !currentEditor;
-      const guessedRelative = workspace && currentEditor && !overviewRequested
+      const projectMode = workspace ? this.lastProjectModes.get(workspace.id) : undefined;
+      // Explicitly unlocked solutions retain editor evidence regardless of earlier conversation mode.
+      const decision: RoutingDecision = unlock
+        ? { mode: 'guidance', context: 'editor', reason: 'source' }
+        : routeTurn(text, {
+          editorOpen: Boolean(currentEditor), selectionActive: Boolean(currentEditor && !currentEditor.selection.isEmpty), previousMode: projectMode
+        });
+      if (decision.mode === 'guidance' && !currentEditor) {
+        this.send('error', { text: 'Abra um arquivo do projeto no editor para analisar código ou pedir pistas sobre uma tarefa. Dúvidas conceituais podem ser feitas sem arquivo aberto.' });
+        return;
+      }
+      const guessedRelative = decision.context === 'editor' && workspace && currentEditor
         ? path.relative(vscode.workspace.getWorkspaceFolder(currentEditor.document.uri)?.uri.fsPath ?? '', currentEditor.document.uri.fsPath).replaceAll('\\', '/')
         : '(raiz)';
       const guessedKey = `${workspace?.id ?? ''}::${guessedRelative}`;
       const historical = this.history.get(guessedKey) ?? [];
       const recentFocus = historical.slice(-4).map(item => item.content).join(' ');
-      const current = await snapshot(`${text} ${recentFocus}`, text);
+      const current = await snapshot(`${text} ${recentFocus}`, text, decision.context);
       if (!current) {
         this.send('error', { text: 'Abra uma pasta de projeto confiável no VS Code. Arquivos sensíveis ou gerados não serão lidos.' });
         return;
       }
       const historyKey = `${current.projectId}::${current.file}`;
       const relevantHistory = this.history.get(historyKey) ?? historical;
-      const isArchitecture = current.file === '(raiz)';
-      const previousLanguage = this.replyLanguages.get(historyKey) ?? this.replyLanguages.get(guessedKey) ?? 'pt';
+      const isDiscussion = decision.mode === 'discussion';
+      const previousLanguage = this.replyLanguages.get(historyKey) ?? this.replyLanguages.get(guessedKey) ?? this.lastProjectLanguages.get(current.projectId) ?? 'pt';
       const answerLanguage = unlock ? previousLanguage : chooseLearnerLanguage(text, previousLanguage);
       const system = answerLanguage === 'en'
-        ? (unlock ? SOLUTION_SYSTEM_EN : isArchitecture ? DISCUSSION_SYSTEM_EN : GUIDANCE_SYSTEM_EN)
-        : (unlock ? SOLUTION_SYSTEM : isArchitecture ? DISCUSSION_SYSTEM : GUIDANCE_SYSTEM);
+        ? (unlock ? SOLUTION_SYSTEM_EN : isDiscussion ? DISCUSSION_SYSTEM_EN : GUIDANCE_SYSTEM_EN)
+        : (unlock ? SOLUTION_SYSTEM : isDiscussion ? DISCUSSION_SYSTEM : GUIDANCE_SYSTEM);
       const progressKey = `${current.projectId}::${current.file}`;
       const previous = this.progress.get(progressKey);
-      const plan = unlock || isArchitecture ? null : planGuidance(text, previous, answerLanguage);
+      const plan = unlock || isDiscussion ? null : planGuidance(text, previous, answerLanguage);
       const memorySummary = this.memory.modelContext(current.projectId, current.project);
       const contextualPrompt = [
         `Histórico pedagógico local, resumido (não contém código nem notas escolares):\n${memorySummary}`,
         `<contexto_nao_confiavel>\n${current.content}\n</contexto_nao_confiavel>`,
         evidence ? `Tentativa relatada: ${evidence.attempt.slice(0, 1200)}\nBloqueio relatado: ${evidence.blocker.slice(0, 1200)}` : '',
         `PEDIDO ATUAL DO ALUNO (PRIORIDADE): ${text.slice(0, 1800)}`,
-        isArchitecture ? informalInterpretation(text) : '',
-        isArchitecture ? dialogueInstruction(text, answerLanguage, relevantHistory.some(item => item.role === 'assistant')) : '',
-        isArchitecture ? observedIdentifierInstruction([...relevantHistory].reverse().find(item => item.role === 'assistant')?.content ?? '', text, answerLanguage) : '',
+        isDiscussion ? informalInterpretation(text) : '',
+        isDiscussion ? dialogueInstruction(text, answerLanguage, relevantHistory.some(item => item.role === 'assistant')) : '',
+        isDiscussion ? observedIdentifierInstruction([...relevantHistory].reverse().find(item => item.role === 'assistant')?.content ?? '', text, answerLanguage) : '',
         plan?.instruction ?? ''
       ].filter(Boolean).join('\n\n');
-      const priorTurns: ChatMessage[] = isArchitecture
+      const priorTurns: ChatMessage[] = isDiscussion
         ? compactDiscussionHistory(relevantHistory, text)
         : relevantHistory.slice(-6);
       const messages: ChatMessage[] = [{ role: 'system', content: localizedSystem(system, answerLanguage) }, ...priorTurns, { role: 'user', content: contextualPrompt }];
@@ -128,7 +140,7 @@ class SaiNiiView implements vscode.WebviewViewProvider {
       let origin: 'model' | 'retry' | 'fallback' | 'solution' = 'solution';
       if (unlock) {
         answer = (await complete(messages, true)).trim().slice(0, 7000);
-      } else if (isArchitecture) {
+      } else if (isDiscussion) {
         const outcome = await resolveDiscussion({
           generate: requestMessages => complete(requestMessages, false, false, true),
           messages, observedPaths: current.architecturePaths ?? [], learnerText: text, language: answerLanguage,
@@ -143,9 +155,9 @@ class SaiNiiView implements vscode.WebviewViewProvider {
       } else {
         const outcome = await resolveGuidance({
           messages,
-          generate: requestMessages => complete(requestMessages, false, Boolean(plan!.needsHelp), isArchitecture),
+          generate: requestMessages => complete(requestMessages, false, Boolean(plan!.needsHelp), false),
           plan: plan!, previous, sourceContext: current.content,
-          learnerText: text, topicContext: recentFocus, language: answerLanguage, observationLimit: isArchitecture ? 1500 : 230
+          learnerText: text, topicContext: recentFocus, language: answerLanguage, observationLimit: 230
         });
         origin = outcome.origin;
         const guidance = outcome.guide;
@@ -165,8 +177,11 @@ class SaiNiiView implements vscode.WebviewViewProvider {
       ];
       // Do not teach the local model to imitate a generic recovery/error text.
       // The webview retains the user's visible turn; the model history excludes it.
-      if (origin !== 'fallback' || !isArchitecture) this.history.set(historyKey, nextHistory.slice(-12));
+      if (origin !== 'fallback' || !isDiscussion) this.history.set(historyKey, nextHistory.slice(-12));
       this.replyLanguages.set(historyKey, answerLanguage);
+      this.lastProjectModes.set(current.projectId, decision.mode);
+      this.lastProjectLanguages.set(current.projectId, answerLanguage);
+      this.diagnosticOutput.appendLine(`Roteamento pedagógico: modo=${decision.mode}; contexto=${decision.context}; motivo=${decision.reason}`);
       this.send('assistant', { text: answer, blocks: assistantBlocks(answer) });
       // A storage error must not replace an otherwise successful pedagogical answer.
       try {
@@ -220,6 +235,8 @@ class SaiNiiView implements vscode.WebviewViewProvider {
     for (const key of this.replyLanguages.keys()) {
       if (key.startsWith(`${workspace.id}::`)) this.replyLanguages.delete(key);
     }
+    this.lastProjectModes.delete(workspace.id);
+    this.lastProjectLanguages.delete(workspace.id);
     this.send('memory', { text: `Memória do projeto ${workspace.name} apagada.` });
   }
 
@@ -231,6 +248,8 @@ class SaiNiiView implements vscode.WebviewViewProvider {
     this.history.clear();
     this.progress.clear();
     this.replyLanguages.clear();
+    this.lastProjectModes.clear();
+    this.lastProjectLanguages.clear();
     this.send('memory', { text: 'Memória local apagada.' });
   }
 

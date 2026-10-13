@@ -43,7 +43,7 @@ export type Snapshot = { project: string; projectId: string; file: string; langu
  * A trusted project folder alone is sufficient for architecture questions.
  * The active editor is optional; nothing is scanned until the learner asks.
  */
-export async function snapshot(learnerContext = '', currentQuestion = learnerContext): Promise<Snapshot | null> {
+export async function snapshot(learnerContext = '', currentQuestion = learnerContext, contextMode: 'workspace' | 'editor' | 'auto' = 'auto'): Promise<Snapshot | null> {
   if (!vscode.workspace.isTrusted) return null;
   const candidate = vscode.window.activeTextEditor;
   const selectedFolder = candidate ? vscode.workspace.getWorkspaceFolder(candidate.document.uri) : undefined;
@@ -56,8 +56,8 @@ export async function snapshot(learnerContext = '', currentQuestion = learnerCon
     : '';
   const editor = relative && allowedRelativePath(relative) ? rawFile : undefined;
   // A restricted editor is never read, even when the learner asks about the workspace.
-  if (rawFile && !editor && !architectureIntent(currentQuestion)) return null;
-  const archMode = architectureIntent(currentQuestion) || !editor;
+  if (rawFile && !editor && contextMode !== 'workspace' && !architectureIntent(currentQuestion)) return null;
+  const archMode = contextMode === 'workspace' || architectureIntent(currentQuestion) || (contextMode === 'auto' && !editor);
   const structureAsked = projectStructureQuestion(currentQuestion);
 
   // A general programming question does not need a repository scan or hundreds

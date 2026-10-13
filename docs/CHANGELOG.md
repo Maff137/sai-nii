@@ -1,3 +1,10 @@
+## v0.2.11 — Pedagogical routing
+
+- Route the learner's current intent independently of whether the editor happens to be open.
+- Conceptual questions remain conversational without scanning the active source file; concrete code/task requests retain guided hints and the existing solution gate.
+- Pure routing and VS Code integration tests cover both file-open and no-editor cases.
+- Per-project, session-only routing continuity; no new accounts, network requests or persisted transcripts.
+
 ## 0.2.10 (candidate — evidence-based critical review)
 
 - For code-review follow-ups, guide the offline model to inspect the constructor and concrete branch conditions rather than assume a particular implementation, and to distinguish ignored values, rejected operations, and runtime type errors.

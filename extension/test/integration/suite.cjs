@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const vscode = require('vscode');
 const { snapshot } = require('../../dist/context.js');
+const { routeTurn } = require('../../dist/routing.js');
 
 async function run() {
   const extension = vscode.extensions.getExtension('sai-nii.sai-nii');
@@ -23,6 +24,18 @@ async function run() {
   assert.match(conceptual.content, /Dúvida conceitual/, 'conceptual questions are explicitly marked and do not require a file list');
   assert.doesNotMatch(conceptual.content, /Árvore de caminhos|main\.py|pyproject\.toml/, 'conceptual questions do not receive an unrelated project tree');
   assert.doesNotMatch(conceptual.content, /Amostras seguras de documentação/, 'conceptual questions skip verbose documentation retrieval');
-  console.log('Sai-nii integration: activation, root architecture and conceptual context OK');
+  const file = vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri, 'src/main.py');
+  await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(file));
+  const intent = routeTurn('O que é encapsulamento?', { editorOpen: true });
+  assert.equal(intent.mode, 'discussion', 'conceptual question must not switch to guided code mode just because editor is open');
+  const withoutSource = await snapshot('O que é encapsulamento?', 'O que é encapsulamento?', intent.context);
+  assert.equal(withoutSource.file, '(raiz)');
+  assert.doesNotMatch(withoutSource.content, /def main\(|print\(\"hello\"\)/, 'no source excerpt for abstract question');
+  const implementation = routeTurn('Quero entender a função main deste arquivo', { editorOpen: true });
+  assert.equal(implementation.mode, 'guidance');
+  const source = await snapshot('Quero entender a função main deste arquivo', 'Quero entender a função main deste arquivo', implementation.context);
+  assert.equal(source.file, 'src/main.py');
+  assert.match(source.content, /def main\(/);
+  console.log('Sai-nii integration: activation, intent routing, root architecture and source context OK');
 }
 module.exports = { run };

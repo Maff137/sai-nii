@@ -155,5 +155,16 @@ const scenarios = [
     ]
   }
 
+
+  ,{
+    id:'editor-concepts', language:'pt', activeEditor:true, experimental:true,
+    label:'Conceitos com editor aberto (roteamento simulado; sem ler o arquivo)',
+    turns:[
+      {prompt:'O que é encapsulamento em Python? Me mostra um exemplo pequeno.', expectedMode:'discussion',
+        signals:[/encapsul|classe|estado|acesso/i],technicalReview:{rubric:['Expor o mecanismo sem pressupor que o aluno perguntou sobre o arquivo aberto. Não inventar fatos do projeto.']}},
+      {prompt:'Now explain that in English, with the same example.',expectedMode:'discussion',
+        signals:[/encapsul|access|object|class|data/i],technicalReview:{rubric:['Continuar o mesmo exemplo em inglês, preservando identificadores já apresentados.']}}
+    ]
+  }
 ];
 module.exports = { scenarios };
