@@ -1,6 +1,6 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const {resolveDiscussion, usefulDiscussionAnswer, nearCopy, projectStructureQuestion, discussionQuality} = require('../dist/discussion.js');
+const {resolveDiscussion, usefulDiscussionAnswer, nearCopy, projectStructureQuestion, discussionQuality, hasDisallowedCodeExample, conceptualExampleAllowed} = require('../dist/discussion.js');
 const context = [{role:'system',content:'Você é um professor.'},{role:'user',content:'Contexto de pastas; pedido atual: por que um só arquivo?'}];
 const answer = 'Separar um programa em diferentes módulos facilita encontrar responsabilidades e isolar testes. Em projetos pequenos, um arquivo só pode ser mais simples; em sistemas maiores a divisão ajuda manutenção, desde que não seja exagerada.';
 test('short natural conceptual follow-ups are answered without a folder-specific rule', async()=>{
@@ -79,4 +79,90 @@ test('original architecture question must include the project-tree evidence', ()
  assert.equal(projectStructureQuestion('Por que os arquivos do código são organizados do jeito que estão?'), true);
  assert.equal(projectStructureQuestion('Me explica por que as pastas foram organizadas assim'), true);
  assert.equal(projectStructureQuestion('Por que colocar todo o código num único arquivo?'), false);
+});
+
+
+test('regression: real Qwen Car example is valid educational English, no retry',async()=>{
+ const question='Could you explain that again in English, with a simple example?';
+ const answer=`Of course! Encapsulation lets an object control access to its internal state. For example, the Car class exposes public operations instead of its internal components.
+
+\`\`\`pseudocode
+class Car {
+    private Engine engine;
+    private FuelTank tank;
+    public start() { engine.start(); }
+    public checkFuel() { return tank.getLevel(); }
+}
+\`\`\`
+
+The private members are not accessed directly by callers; the public operations define the interface and may enforce invariants.`;
+ assert.equal(discussionQuality(answer,question),'valid');
+ let calls=0;
+ const result=await resolveDiscussion({messages:context,language:'en',learnerText:question,structuralQuestion:false,observedPaths:[],generate:async()=>{calls++;return answer;}});
+ assert.equal(calls,1);assert.equal(result.origin,'model');assert.equal(result.text,answer);
+});
+
+test('short Python conceptual example is accepted for Portuguese informal questions',()=>{
+ const answer='Encapsulamento controla quem pode alterar o estado de um objeto. Por exemplo:\n\n```python\nclass Conta:\n    def depositar(self, valor):\n        self._saldo += valor\n```\n\nA operação permite validar um depósito antes de atualizar o saldo; um atributo interno não deve ser alterado arbitrariamente.';
+ assert.equal(discussionQuality(answer,'oq eh encapsulamento? mostra um exemplo'),'valid');
+});
+
+test('code-only dump, oversized example, malformed fence and task solution remain rejected',async()=>{
+ const q='Explain encapsulation with a simple example';
+ assert.equal(discussionQuality('```js\nconst balance = 0;\n```',q),'code');
+ const huge='A short conceptual explanation of how access works for an object.\n```js\n'+Array.from({length:34},(_,i)=>`console.log(${i});`).join('\n')+'\n```\nThis explanatory prose covers what the example demonstrates.';
+ assert.equal(discussionQuality(huge,q),'code');
+ assert.equal(discussionQuality('Here is an explanation of the object interface.\n```js\nconst balance = 0;','Explain encapsulation'),'code');
+ const answer='Encapsulamento mantém as regras de atualização dentro do objeto.\n```js\nclass Conta { depositar(v) { this.saldo += v; } }\n```\nNesse exemplo o método controla quando o valor interno é alterado.';
+ const task='Implemente a classe Conta do meu projeto e resolva essa tarefa para mim';
+ assert.equal(conceptualExampleAllowed(task),false);
+ assert.equal(conceptualExampleAllowed('faz um código de login para mim'),false);
+ assert.equal(conceptualExampleAllowed('How can you make a login endpoint?'),false);
+ assert.equal(discussionQuality(answer,task),'code');
+ assert.equal(hasDisallowedCodeExample(answer,task),true);
+ let attempts=0;
+ const result=await resolveDiscussion({messages:context,language:'pt',learnerText:task,structuralQuestion:false,observedPaths:[],generate:async messages=>{
+   attempts++;
+   if(attempts===2) assert.match(messages.at(-1).content,/não foi autorizado a receber uma implementação completa/);
+   return attempts===1?answer:'Não posso entregar essa implementação sem verificar a tentativa e o bloqueio; posso explicar os princípios para você desenvolvê-la.';
+ }});
+ assert.equal(result.origin,'retry');assert.equal(attempts,2);
+});
+
+test('oversized conceptual examples request shorter, grounded example on retry',async()=>{
+ const q='Explain encapsulation with a simple example';let attempts=0;
+ const large='Encapsulation controls internal state through operations.\n```js\n'+Array.from({length:40},(_,i)=>`const value${i} = ${i};`).join('\n')+'\n```\nThe demonstration is intentionally much too big for a single small learning example.';
+ const result=await resolveDiscussion({messages:context,language:'en',learnerText:q,structuralQuestion:false,observedPaths:[],generate:async messages=>{
+   attempts++;
+   if(attempts===2) assert.match(messages.at(-1).content,/ONE small, independent conceptual example/);
+   return attempts===1?large:'Encapsulation allows callers to use a controlled interface while internal object state remains private.';
+ }});
+ assert.equal(result.origin,'retry');assert.equal(attempts,2);
+});
+
+
+test('a token-budget truncated reply is rejected even if its text otherwise looks valid', async()=>{
+ const { markIncompleteGeneration } = require('../dist/generation.js');
+ const q='What is the difference between encapsulation and abstraction?';
+ const cut='Encapsulation hides internal state and exposes controlled operations. Abstraction focuses on essential capabilities. The difference is:\n1. **Encaps';
+ const marked=markIncompleteGeneration(cut,'length');
+ assert.equal(discussionQuality(marked,q),'truncated');
+ assert.equal(discussionQuality(markIncompleteGeneration(cut,'stop'),q),'valid');
+ let calls=0;const diagnostics=[];
+ const result=await resolveDiscussion({messages:context,language:'en',learnerText:q,structuralQuestion:false,observedPaths:[],onDiagnostic:(attempt,reason)=>diagnostics.push([attempt,reason]),generate:async messages=>{
+  calls++;
+  if(calls===2) assert.match(messages.at(-1).content,/out of output tokens.*COMPLETE, concise answer/s);
+  return calls===1 ? marked : 'Encapsulation controls access to internal state; abstraction presents essential capabilities. Both reduce complexity in different ways.';
+ }});
+ assert.equal(result.origin,'retry');assert.equal(calls,2);
+ assert.deepEqual(diagnostics,[[1,'truncated']]);
+});
+
+test('a second unfinished response does not reach the learner',async()=>{
+ const {markIncompleteGeneration}=require('../dist/generation.js');
+ const q='Explain abstraction briefly';
+ const truncated=markIncompleteGeneration('Abstraction involves hiding unnecessary details and presenting an interface with a public method','length');
+ const result=await resolveDiscussion({messages:context,language:'en',learnerText:q,structuralQuestion:false,observedPaths:[],generate:async()=>truncated});
+ assert.equal(result.origin,'fallback');
+ assert.doesNotMatch(result.text,/presenting an interface with a public method/);
 });

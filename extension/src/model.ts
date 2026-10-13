@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { markIncompleteGeneration } from './generation';
 
 export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
@@ -41,10 +42,12 @@ export async function complete(messages: ChatMessage[], unlocked = false, requir
     });
     if (!response.ok) throw new Error(`Servidor local respondeu HTTP ${response.status}.`);
     const data: unknown = await response.json();
-    const choices = (data as { choices?: Array<{ message?: { content?: unknown } }> }).choices;
+    const choices = (data as { choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }> }).choices;
     const content = choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) throw new Error('Modelo local não retornou texto.');
-    return content;
+    // Natural-language discussions may be cut off by max_tokens. Let the
+    // discussion validator retry instead of displaying an unfinished answer.
+    return architecture ? markIncompleteGeneration(content, choices?.[0]?.finish_reason) : content;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`Não foi possível falar com o modelo em 127.0.0.1:${port}. Confira o llama-server e o modelo GGUF. (${detail})`);

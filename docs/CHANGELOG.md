@@ -1,3 +1,27 @@
+## 0.2.8 (refinement — distinguish teaching examples from project solutions)
+
+- Remove the blanket ban on fenced Markdown code in conceptual tutoring; small **self-contained educational examples** may illustrate a concept, including when switching between Portuguese and English.
+- Keep concrete implementation requests gated: direct requests to write or fix a learner's task are not authorized merely by asking the conceptual chat. A bounded example must include explanatory prose, have balanced fences, and stay within size limits. This is conservative intent screening, **not proof of semantic independence** from the learner's project.
+- For oversized snippets, retry requesting one smaller independent example; for implementation requests, retry in prose without solution code. The app remains read-only and never executes examples.
+- Regression tests reproduce the type of fenced Car example rejected in the real bilingual Qwen benchmark, check malformed/code-only/oversized/implementation replies, and preserve benchmark raw-output opt-in behavior.
+- Markdown rendering continues to use inert text nodes; no new dependencies or external services. The existing integration test and local model benchmark still require rerunning on the developer's Mac.
+
+## 0.2.8 — hotfix candidate: instructional examples and synthetic-only diagnostics
+
+- Clarify the conceptual explanation style: give concrete programming examples in prose instead of relying solely on toy-box analogies.
+- When an initial response contains a fenced code block, request an example in prose on retry; full project solutions remain guarded.
+- Benchmark adds explicit `--show-rejected` to print rejected generations for **fixed synthetic prompts only**; disabled by default. The extension never logs rejected model content.
+- No claim of automatic factual validation or of improved real-model first-attempt rate without rerunning the benchmark.
+
+## 0.2.8 (candidate — natural Portuguese/English tutoring)
+
+- Select explanation language from the learner's **current question**, with explicit language requests taking precedence. Brief ambiguous follow-ups inherit the conversation language within that project/file session; source code and programming language names do not choose the reply language.
+- Use language-specific general tutoring, Socratic guidance, solution explanation and retry instructions; do not make a small local model translate a full foreign-language system prompt implicitly.
+- Add English help/difficulty recognition and graduated hint wording; preserve existing explicit-solution authorization gate and read-only behavior.
+- Provide localized deterministic fallback notices and bounded project-tree evidence when two local-model attempts fail; keep project paths sanitized.
+- Extend the same language-routing logic into the offline synthetic benchmark. Add PT→EN→PT and EN→PT conversation scenarios; test response language routing, code identifiers and context continuity without saving raw questions.
+- No additional model download, service, telemetry or dependency. The underlying model still determines fluency and technical accuracy; this is a developer candidate pending macOS VS Code integration and real Qwen evaluation.
+
 ## 0.2.7 (refinement — distinguish related technical concepts)
 
 - Follow real-device review: Qwen correctly rejected automatic parallelism from source modules but overgeneralized about JavaScript thread limits and mandatory synchronization. These claims require precise conditions.

@@ -70,3 +70,53 @@ test('relevance indicators remain conservative about missing concepts', () => {
   const turn = scenarios.find(s => s.id === 'pt-modulos-informal').turns[0];
   assert.equal(indicators('A revisão é importante por outros motivos.', turn, 'pt').signal_groups_matched, 0);
 });
+
+
+test('benchmarks exercise real Portuguese-to-English-to-Portuguese turns without persisting dialogue',async()=>{
+  const scenario = scenarios.find(s=>s.id==='pt-en-switch');
+  const expected=['pt','en','pt'];let calls=0;
+  const report=await evaluateScenario(scenario,async messages=>{
+    const lang=expected[calls++];
+    assert.match(messages[0].content,lang==='pt'?/IDIOMA DESTA RESPOSTA: português/:/RESPONSE LANGUAGE FOR THIS TURN: English/);
+    if(calls>1) assert.ok(messages.some(m=>m.role==='assistant'));
+    return lang==='en'?'Encapsulation controls access to an object’s internal state.':'Encapsulamento controla o acesso ao estado interno; abstração destaca apenas o essencial.';
+  });
+  assert.deepEqual(report.turns.map(t=>t.requested_language),expected);
+  assert.ok(report.turns.every(t=>t.answer===undefined));
+});
+
+test('English first, then Portuguese: programming identifiers do not force response language',async()=>{
+ const scenario=scenarios.find(s=>s.id==='en-pt-switch');let calls=0;
+ const report=await evaluateScenario(scenario,async messages=>{
+  calls++;return calls===1?'async/await lets you await promises without blocking the event loop.':'async/await organiza a espera de operações assíncronas sem criar paralelismo de CPU.';
+ });
+ assert.deepEqual(report.turns.map(t=>t.requested_language),['en','pt']);
+});
+
+
+test('rejected model text is never exposed unless explicitly opted in for synthetic benchmark', async () => {
+  const scenario = { id: 'synthetic', language: 'en', label: 'fenced', turns: [{prompt:'Can you explain encapsulation with a small example?', signals:[]}] };
+  let calls=0;
+  const generate=async()=>++calls===1?'```javascript\nconst balance = 0;\n```':'Encapsulation provides controlled access to state through defined operations.';
+  const silent=await evaluateScenario(scenario,generate);
+  assert.equal(silent.turns[0].origin,'retry');
+  assert.deepEqual(silent.turns[0].rejected,[{attempt:1,reason:'code'}]);
+  assert.equal(silent.turns[0].rejected_answers,undefined);
+  calls=0;
+  const visible=await evaluateScenario(scenario,generate,{includeRejected:true});
+  assert.equal(visible.turns[0].rejected_answers.length,1);
+  assert.match(visible.turns[0].rejected_answers[0].text,/const balance/);
+  assert.equal(visible.turns[0].answer,undefined);
+  assert.equal(parseOptions(['--show-rejected']).includeRejected,true);
+  assert.equal(parseOptions([]).includeRejected,false);
+});
+
+
+test('synthetic English teaching example is accepted on first attempt without printing source by default',async()=>{
+ const scenario={id:'synthetic-example',language:'en',label:'education',turns:[{prompt:'Could you explain encapsulation with a simple example?',signals:[/encapsul/i]}]};
+ let calls=0;
+ const explanation='Encapsulation keeps internal state behind a small set of public operations.\n\n```javascript\nclass Account {\n  deposit(amount) { this.balance += amount; }\n}\n```\n\nThe method is where you can check a valid amount before changing the internal balance.';
+ const result=await evaluateScenario(scenario,async()=>{calls++;return explanation;});
+ assert.equal(calls,1);assert.equal(result.turns[0].origin,'model');assert.deepEqual(result.turns[0].rejected,[]);
+ assert.equal(result.turns[0].answer,undefined);
+});

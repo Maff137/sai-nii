@@ -1,3 +1,4 @@
+import { LearnerLanguage } from './language';
 import { Guidance, GuidancePlan, GuidanceProgress, parseGuidance, repeatsExplanation, repeatsQuestion } from './pedagogy';
 import { architectureIntent } from './architecture';
 
@@ -16,6 +17,7 @@ type Inputs = {
   learnerText: string;
   topicContext: string;
   observationLimit?: number;
+  language?: LearnerLanguage;
 };
 
 function rejectionReason(raw: string, plan: GuidancePlan, previous?: GuidanceProgress, observationLimit = 230): { guide?: Guidance; reason?: string } {
@@ -140,18 +142,36 @@ export async function resolveGuidance(input: Inputs): Promise<GuidanceOutcome> {
   const correction: Message[] = [
     ...input.messages,
     { role: 'assistant', content: response.slice(0, 1200) },
-    { role: 'user', content: `Sua última saída foi rejeitada (${firstReason}). Gere SOMENTE JSON com observation, hint e question. ` +
-        `O aluno quer raciocinar sobre seu código, não receber a resposta pronta. ` +
-        `Se estiver bloqueado, hint deve apresentar uma pista concreta NOVA; question pode ser vazio ou conter UMA pergunta útil. ` +
-        `Não repita: ${JSON.stringify(input.previous?.question ?? '')}.` }
+    { role: 'user', content: input.language === 'en'
+        ? `Previous reply was rejected (${firstReason}). Produce ONLY JSON with observation, hint and question IN ENGLISH. ` +
+          `Help the learner reason about the actual code without a complete solution. If they are stuck, give ONE new concrete hint. ` +
+          `Do not repeat this previous question: ${JSON.stringify(input.previous?.question ?? '')}.`
+        : `Sua última saída foi rejeitada (${firstReason}). Gere SOMENTE JSON com observation, hint e question. ` +
+          `O aluno quer raciocinar sobre seu código, não receber a resposta pronta. ` +
+          `Se estiver bloqueado, hint deve apresentar uma pista concreta NOVA; question pode ser vazio ou conter UMA pergunta útil. ` +
+          `Não repita: ${JSON.stringify(input.previous?.question ?? '')}.` }
   ];
   response = await input.generate(correction);
   checked = rejectionReason(response, input.plan, input.previous, input.observationLimit);
   if (checked.guide) return { guide: checked.guide, recovered: false, origin: 'retry' };
   return {
-    guide: rescueGuidance(input.sourceContext, `${input.learnerText} ${input.topicContext}`, input.plan, input.previous),
+    guide: input.language === 'en'
+      ? rescueEnglishGuidance(input.sourceContext, input.topicContext, input.plan)
+      : rescueGuidance(input.sourceContext, `${input.learnerText} ${input.topicContext}`, input.plan, input.previous),
     recovered: true,
     origin: 'fallback',
     rejectionReason: checked.reason ?? firstReason
   };
+}
+
+/** Safe minimal English rescue if the local model fails twice. */
+function rescueEnglishGuidance(sourceContext: string, topicContext: string, plan: GuidancePlan): Guidance {
+  const symbol = selectedIdentifier(sourceContext, topicContext);
+  if (plan.needsHelp) {
+    return { observation: 'We can focus on one piece of the code.',
+      hint: symbol ? `Find the call to "${symbol}" and inspect its arguments one by one. Focus on what the first argument represents.` : 'Select a single expression and trace only its inputs before looking at the rest of the function.',
+      question: '' };
+  }
+  return { observation: symbol ? `I can see a call to "${symbol}" in the open file. We can examine what its arguments do.` : 'We can focus on a small part of the open file instead of the entire program.',
+    question: symbol ? 'Which argument would you like to understand first?' : 'Which function or expression would you like to examine first?' };
 }

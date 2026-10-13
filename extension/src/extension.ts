@@ -5,11 +5,12 @@ import { complete, ChatMessage } from './model';
 import { createHtml, assistantBlocks } from './webview';
 import { LearnerMemory, projectIdentity } from './memory';
 import { learningKind } from './learning';
-import { GUIDANCE_SYSTEM, SOLUTION_SYSTEM, guidanceText, releaseAllowed, SolutionRequest, planGuidance, GuidanceProgress } from './pedagogy';
+import { GUIDANCE_SYSTEM, GUIDANCE_SYSTEM_EN, SOLUTION_SYSTEM, SOLUTION_SYSTEM_EN, guidanceText, releaseAllowed, SolutionRequest, planGuidance, GuidanceProgress } from './pedagogy';
 import { architectureIntent } from './architecture';
-import { DISCUSSION_SYSTEM, projectStructureQuestion, resolveDiscussion } from './discussion';
+import { DISCUSSION_SYSTEM, DISCUSSION_SYSTEM_EN, projectStructureQuestion, resolveDiscussion } from './discussion';
 import { informalInterpretation } from './informal';
 import { resolveGuidance } from './recovery';
+import { LearnerLanguage, chooseLearnerLanguage, localizedSystem } from './language';
 
 class SaiNiiView implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
@@ -17,6 +18,7 @@ class SaiNiiView implements vscode.WebviewViewProvider {
   // Chat context is isolated by file and project. Never mix two repositories.
   private history = new Map<string, ChatMessage[]>();
   private progress = new Map<string, GuidanceProgress>();
+  private replyLanguages = new Map<string, LearnerLanguage>();
   private memory: LearnerMemory;
   private readonly diagnosticOutput = vscode.window.createOutputChannel('Sai-nii: diagnóstico');
 
@@ -98,10 +100,14 @@ class SaiNiiView implements vscode.WebviewViewProvider {
       const historyKey = `${current.projectId}::${current.file}`;
       const relevantHistory = this.history.get(historyKey) ?? historical;
       const isArchitecture = current.file === '(raiz)';
-      const system = unlock ? SOLUTION_SYSTEM : isArchitecture ? DISCUSSION_SYSTEM : GUIDANCE_SYSTEM;
+      const previousLanguage = this.replyLanguages.get(historyKey) ?? this.replyLanguages.get(guessedKey) ?? 'pt';
+      const answerLanguage = unlock ? previousLanguage : chooseLearnerLanguage(text, previousLanguage);
+      const system = answerLanguage === 'en'
+        ? (unlock ? SOLUTION_SYSTEM_EN : isArchitecture ? DISCUSSION_SYSTEM_EN : GUIDANCE_SYSTEM_EN)
+        : (unlock ? SOLUTION_SYSTEM : isArchitecture ? DISCUSSION_SYSTEM : GUIDANCE_SYSTEM);
       const progressKey = `${current.projectId}::${current.file}`;
       const previous = this.progress.get(progressKey);
-      const plan = unlock || isArchitecture ? null : planGuidance(text, previous);
+      const plan = unlock || isArchitecture ? null : planGuidance(text, previous, answerLanguage);
       const memorySummary = this.memory.modelContext(current.projectId, current.project);
       const contextualPrompt = [
         `Histórico pedagógico local, resumido (não contém código nem notas escolares):\n${memorySummary}`,
@@ -114,7 +120,7 @@ class SaiNiiView implements vscode.WebviewViewProvider {
       const priorTurns: ChatMessage[] = isArchitecture
         ? relevantHistory.slice(-4).map(item => ({ role: item.role, content: item.content.slice(0, 1050) }))
         : relevantHistory.slice(-6);
-      const messages: ChatMessage[] = [{ role: 'system', content: system }, ...priorTurns, { role: 'user', content: contextualPrompt }];
+      const messages: ChatMessage[] = [{ role: 'system', content: localizedSystem(system, answerLanguage) }, ...priorTurns, { role: 'user', content: contextualPrompt }];
       let answer: string;
       let origin: 'model' | 'retry' | 'fallback' | 'solution' = 'solution';
       if (unlock) {
@@ -122,7 +128,7 @@ class SaiNiiView implements vscode.WebviewViewProvider {
       } else if (isArchitecture) {
         const outcome = await resolveDiscussion({
           generate: requestMessages => complete(requestMessages, false, false, true),
-          messages, observedPaths: current.architecturePaths ?? [], learnerText: text,
+          messages, observedPaths: current.architecturePaths ?? [], learnerText: text, language: answerLanguage,
           structuralQuestion: projectStructureQuestion(text),
           onDiagnostic: (attempt, reason) => this.diagnosticOutput.appendLine(`Resposta conceitual rejeitada: tentativa ${attempt}; motivo=${reason}`),
           previousAnswer: [...relevantHistory].reverse().find(item => item.role === 'assistant')?.content
@@ -135,7 +141,7 @@ class SaiNiiView implements vscode.WebviewViewProvider {
           messages,
           generate: requestMessages => complete(requestMessages, false, Boolean(plan!.needsHelp), isArchitecture),
           plan: plan!, previous, sourceContext: current.content,
-          learnerText: text, topicContext: recentFocus, observationLimit: isArchitecture ? 1500 : 230
+          learnerText: text, topicContext: recentFocus, language: answerLanguage, observationLimit: isArchitecture ? 1500 : 230
         });
         origin = outcome.origin;
         const guidance = outcome.guide;
@@ -156,6 +162,7 @@ class SaiNiiView implements vscode.WebviewViewProvider {
       // Do not teach the local model to imitate a generic recovery/error text.
       // The webview retains the user's visible turn; the model history excludes it.
       if (origin !== 'fallback' || !isArchitecture) this.history.set(historyKey, nextHistory.slice(-12));
+      this.replyLanguages.set(historyKey, answerLanguage);
       this.send('assistant', { text: answer, blocks: assistantBlocks(answer) });
       // A storage error must not replace an otherwise successful pedagogical answer.
       try {
@@ -206,6 +213,9 @@ class SaiNiiView implements vscode.WebviewViewProvider {
     for (const key of this.history.keys()) {
       if (key.startsWith(`${workspace.id}::`)) this.history.delete(key);
     }
+    for (const key of this.replyLanguages.keys()) {
+      if (key.startsWith(`${workspace.id}::`)) this.replyLanguages.delete(key);
+    }
     this.send('memory', { text: `Memória do projeto ${workspace.name} apagada.` });
   }
 
@@ -216,6 +226,7 @@ class SaiNiiView implements vscode.WebviewViewProvider {
     await this.memory.clear();
     this.history.clear();
     this.progress.clear();
+    this.replyLanguages.clear();
     this.send('memory', { text: 'Memória local apagada.' });
   }
 

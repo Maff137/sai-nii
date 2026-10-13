@@ -1,3 +1,10 @@
+## Current candidate: v0.2.8 — Prevent incomplete explanations
+
+- Checks the local model's `finish_reason` for output-token cutoffs in conceptual discussions and the offline benchmark. A cut-off answer is rejected instead of shown as finished.
+- Retries with shorter, complete wording after a cutoff; no code-dump workaround and no changes to solution authorization.
+- Keeps independent teaching examples for conceptual questions. Does not claim semantic/factual verification or multilingual parity across models.
+- The model should normally use concise explanations instead of huge code-heavy lists. All results still require full TypeScript and VS Code integration validation on the user's Mac.
+
 # Sai-nii
 
 **An offline, Socratic programming tutor inside Visual Studio Code.**
@@ -6,7 +13,7 @@ Sai-nii is an open-source project focused on helping you reason about **your own
 
 ## Development status
 
-**Pre-alpha v0.2.2 (developer preview).** The current extension provides a sidebar, reads bounded context from the active file and local Git repository, calls an *already running* `llama.cpp` OpenAI-compatible server on loopback, and implements an initial solution-release gate and a local, project-scoped memory of learning interactions. Unlike earlier versions, Socratic questions are not mandatory on every turn. This is not yet a one-click installer, a full pedagogical engine, or a validated release. See [product specification](docs/Sai-nii_SPEC_v1.1.md) and [implementation notes](docs/DEVELOPMENT.md).
+**Pre-alpha v0.2.8 (developer preview).** The current extension provides a sidebar, reads bounded context from the active file and local Git repository, calls an *already running* `llama.cpp` OpenAI-compatible server on loopback, and implements an initial solution-release gate and a local, project-scoped memory of learning interactions. Unlike earlier versions, Socratic questions are not mandatory on every turn. This is not yet a one-click installer, a full pedagogical engine, or a validated release. See [product specification](docs/Sai-nii_SPEC_v1.1.md) and [implementation notes](docs/DEVELOPMENT.md).
 
 ## Try the development extension
 
@@ -69,3 +76,19 @@ npm run evaluate:local -- --case pt-modulos-premissa --show-rubric --show-answer
 ```
 
 These flags are **not an automated fact checker**; any flagged or unflagged answer still needs human evaluation. No rubric is passed to the model, and answers are not printed unless requested. Details: `docs/DEVELOPMENT.md`.
+
+## v0.2.8 — English and Portuguese conversational explanations
+
+Sai-nii now chooses the spoken explanation language from the learner's question, not from the language of the open source code. English questions receive English-oriented model instructions; informal PT-BR continues in Portuguese. Short ambiguous follow-ups retain the last spoken language for that project/file during the session. Explicit requests such as "responda em inglês" or "answer in Portuguese" override automatic selection.
+
+This covers conceptual conversation, editor-based Socratic hints and the explanation of an explicitly authorized solution. Source identifiers are not translated; no user conversations are persisted for language selection. The default interface and static buttons remain in Portuguese. Fluency depends on the local model; language identification is conservative and not a universal language detector.
+
+Offline checks: `cd extension && npm test` and `npm run test:integration`. For the live local model, use `npm run evaluate:local -- --case pt-en-switch --show-answers` or `--case en-pt-switch --show-answers`. Benchmarks use fictional prompts, and answers print only when explicitly requested.
+
+
+Diagnostic for fixed offline synthetic benchmarks: `cd extension && npm run evaluate:local -- --case pt-en-switch --show-answers --show-rejected`. Rejected model content is displayed only with explicit opt-in in the terminal; do not use it for private prompts.
+
+
+## v0.2.8 — Explanatory code examples (candidate)
+
+Conceptual tutoring can now display short, independent code examples that teach a concept. This is distinct from giving the learner the solution to a concrete project task, which remains gated by an explicit request, a substantive attempt and a blocker. The code is rendered as inert text, never executed or written to the workspace. The small heuristic checker is a limited safeguard, not a semantic guarantee.

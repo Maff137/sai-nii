@@ -45,12 +45,32 @@ const scenarios = [
       technicalReview: { rubric: ['Não fingir que viu código ou erro não fornecido.', 'Solicitar contexto específico, como mensagem de erro ou trecho, sem inventar uma causa.'] } }]
   },
   {
-    id: 'en-encapsulation', language: 'en', experimental: true, label: 'Inglês — requisito futuro',
+    id: 'en-encapsulation', language: 'en', experimental: true, label: 'Inglês — teste bilíngue',
     turns: [
       { prompt: 'What is encapsulation in programming, and why use it?', signals: [/encapsul|data|state|class/i, /access|protect|control|private|hidden/i],
         technicalReview: { rubric: ['Answer in English and explain controlled access, not encryption or guaranteed security.'] } },
       { prompt: 'How is it different from abstraction?', signals: [/abstract|simplif|essential/i, /encapsul|internal|access|hide/i],
         technicalReview: { rubric: ['Compare the two concepts, carry context from the previous exchange, answer in English.'] } }
+    ]
+  },
+  {
+    id: 'pt-en-switch', language: 'pt', label: 'Português para inglês na mesma conversa',
+    turns: [
+      { prompt: 'oq é encapsulamento e pq usamos isso?', signals: [/encapsul|estado|acesso|classe/i],
+        technicalReview: { rubric: ['Explain in Brazilian Portuguese; avoid conflating abstraction and encapsulation.'] } },
+      { prompt: 'Could you explain that again in English, with a simple example?', signals: [/encapsul|access|state|data|object/i],
+        technicalReview: { rubric: ['Switch to English even though the previous turn is Portuguese; retain the concept of encapsulation.'] } },
+      { prompt: 'e como isso se diferencia de abstração?', signals: [/abstra|encapsul|estado|acesso|essencia|simplific/i],
+        technicalReview: { rubric: ['Switch back to Portuguese naturally and compare the two concepts.'] } }
+    ]
+  },
+  {
+    id: 'en-pt-switch', language: 'en', label: 'English to Portuguese, with technical identifiers',
+    turns: [
+      { prompt: 'What does async/await do in JavaScript?', signals: [/async|await|promise|asynchron/i],
+        technicalReview: { rubric: ['Answer in English. Do not mistake async/await for CPU parallelism.'] } },
+      { prompt: 'agora me explica em português, por favor', signals: [/async|await|assincron|promess|espera|opera/i],
+        technicalReview: { rubric: ['Answer in Portuguese and preserve context and exact technical terms.'] } }
     ]
   },
   {
