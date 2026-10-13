@@ -1,18 +1,20 @@
 import * as vscode from 'vscode';
 import * as path from 'node:path';
+import { promises as fs } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { bounded } from './pedagogy';
 import { focusedSource } from './focus';
 import { projectIdentity } from './memory';
+import { rankRelatedFiles, likelyTextFile, withinRoot } from './related';
 
 const execFileAsync = promisify(execFile);
-const FOLDER_EXCLUDE = new Set(['.git', '.ssh', '.aws', '.azure', '.gnupg', 'node_modules', '.venv', 'venv', 'dist', 'build', 'coverage', '.next', '__pycache__']);
+const FOLDER_EXCLUDE = new Set(['.git', '.ssh', '.aws', '.azure', '.gnupg', 'node_modules', '.venv', 'venv', 'dist', 'build', 'coverage', '.next', '__pycache__', '.idea', '.vscode-test']);
 
 export function allowedRelativePath(name: string): boolean {
   const p = name.replaceAll('\\', '/');
   const parts = p.split('/');
-  if (parts.some(part => FOLDER_EXCLUDE.has(part))) return false;
+  if (parts.some(part => FOLDER_EXCLUDE.has(part.toLowerCase()))) return false;
   const leaf = parts.at(-1)?.toLowerCase() ?? '';
   if (/^\.env(?:\..+)?$/.test(leaf) || /\.((?:key|pem|p12|pfx|crt|cert))$/.test(leaf)) return false;
   if (/(?:secrets?|credentials?|id_rsa|id_ed25519|tokens?)(?:[._-]|$)/.test(leaf)) return false;
@@ -55,19 +57,50 @@ export async function snapshot(learnerContext = ''): Promise<Snapshot | null> {
   const activeDiff = await git(folder.uri.fsPath, ['diff', '--no-ext-diff', '--no-textconv', '--', rel]);
   const recentCommits = await git(folder.uri.fsPath, ['log', '-3', '--pretty=format:%h %s']);
   const nearby = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, '**/*'),
-    '{**/.git/**,**/node_modules/**,**/.venv/**,**/dist/**,**/build/**,**/coverage/**}', 70);
+    '{**/.git/**,**/node_modules/**,**/.venv/**,**/dist/**,**/build/**,**/coverage/**,**/.idea/**,**/.vscode-test/**}', 250);
   const paths = nearby.map(u => path.relative(folder.uri.fsPath, u.fsPath).replaceAll('\\', '/'))
-    .filter(allowedRelativePath).slice(0, 55);
+    .filter(allowedRelativePath);
+  const related = await readRelatedFiles(folder.uri.fsPath, paths, rel, fullText, learnerContext);
   const body = [
     `Projeto: ${folder.name}`,
     `Arquivo: ${rel} | Linguagem VS Code: ${editor.document.languageId}`,
     `Trecho selecionado (se houver):\n${selection || '(nenhum)'}`,
     `Trecho prioritário do editor (com números de linha, inclui alterações não salvas):\n${fileText}`,
     `Diagnósticos atuais:\n${diagnostics.join('\n') || '(nenhum)'}`,
-    `Caminhos de arquivos do workspace:\n${paths.join('\n') || '(não disponível)'}`,
+    `Caminhos de arquivos do workspace:\n${paths.slice(0, 55).join('\n') || '(não disponível)'}`,
+    `Arquivos relacionados selecionados por imports ou menções explícitas (leitura limitada):\n${related || '(nenhum identificado)'}`,
     `Git status (somente nomes filtrados):\n${gitStatus || '(limpo/indisponível)'}`,
     `Git diff do arquivo aberto:\n${bounded(activeDiff, 1500) || '(nenhum)'}`,
     `Últimos commits locais:\n${bounded(recentCommits, 500) || '(indisponível)'}`
   ].join('\n\n');
   return { project: folder.name, projectId: projectIdentity(folder.uri.fsPath), file: rel, language: editor.document.languageId, content: body };
+}
+
+/** Read up to two explicitly linked text files. Symlink targets outside the workspace are rejected. */
+async function readRelatedFiles(root: string, paths: string[], active: string, source: string, question: string): Promise<string> {
+  const chosen = rankRelatedFiles(paths, active, source, question, 2);
+  if (!chosen.length) return '';
+  const realRoot = await fs.realpath(root).catch(() => '');
+  if (!realRoot) return '';
+  const results: string[] = [];
+  for (const relative of chosen) {
+    if (!allowedRelativePath(relative) || !likelyTextFile(relative)) continue;
+    const absolute = path.resolve(root, relative);
+    if (!withinRoot(root, absolute)) continue;
+    try {
+      const realFile = await fs.realpath(absolute);
+      if (!withinRoot(realRoot, realFile)) continue;
+      const stat = await fs.stat(realFile);
+      if (!stat.isFile() || stat.size > 128_000) continue;
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(absolute));
+      const content = doc.getText();
+      if (content.length > 160_000 || content.includes('\0')) continue;
+      // Source is bounded even when both related files are selected.
+      const snippet = focusedSource(content, question, 0, 1200);
+      results.push(`Arquivo relacionado: ${relative}\n${snippet}`);
+    } catch {
+      // A missing or unreadable file must not prevent tutoring.
+    }
+  }
+  return results.join('\n\n').slice(0, 3200);
 }

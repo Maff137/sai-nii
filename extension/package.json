@@ -2,7 +2,7 @@
   "name": "sai-nii",
   "displayName": "Sai-nii",
   "description": "An offline, Socratic programming tutor for your real projects.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "publisher": "sai-nii",
   "license": "MIT",

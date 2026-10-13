@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.1 (candidate — cross-file project context)
+
+- Context can include up to two related source files referenced by imports or explicitly mentioned in the learner's question.
+- Supports path-based references without a programming-language-specific parser; Python and TypeScript/JavaScript scenarios covered by tests.
+- Limits each related file to 128 KB on disk, extracts short line-numbered snippets, and caps total additional context.
+- Confines reads to the trusted workspace: ignores sensitive filenames, generated folders, likely binary files, and symlinks escaping the workspace.
+- No edits, background scanning, arbitrary command execution, hosted model calls, or changes to the model runtime.
+- Not a full semantic index or dependency graph. Large workspaces and indirect dependencies will require further work.
+
+
 ## 0.1.0 (development)
 
 - Socratic guidance may contain zero or one question; no forced questions.

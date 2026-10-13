@@ -48,3 +48,12 @@ Structured replies still use `observation`, `hint`, and `question`, but `questio
 ## Extension Host smoke test
 
 Run `npm install`, `npm test`, then `npm run test:integration`. The separate integration command may download a VS Code binary on first run, and requires a supported GUI/host environment. It validates activation and command registrations, not pedagogical model behavior; unit tests use deterministic model simulations. CI continues to run unit tests on macOS, Windows and Ubuntu.
+
+
+## v0.1.1 — Cross-file context experiment
+
+On a user-initiated question, Sai-nii may include two extra files that are linked to the current source through import/module references, or explicitly named in the question. It never uses full-project bulk reads. Its local-context policy remains read-only and offline. Paths with credential-like names, binary files, generated directories and external symlink targets are excluded; realpath containment and size limits are enforced before opening a file.
+
+Unit tests for import ranking can run without VS Code, but final compilation (`npm test`) and Extension Host integration tests (`npm run test:integration`) must be validated on the target machine. To inspect actual behavior, open a workspace with two linked source files and ask Sai-nii about the import; avoid using personal or confidential repositories for first-run tests.
+
+Current limitations: heuristic imports rather than language-server dependency graph, a finite workspace listing, and a short context window. The model may still misunderstand relationships; do not treat generated explanations as verified code analysis.
