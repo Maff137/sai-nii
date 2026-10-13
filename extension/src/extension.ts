@@ -3,13 +3,16 @@ import { snapshot } from './context';
 import { complete, ChatMessage } from './model';
 import { createHtml } from './webview';
 import { LearnerMemory } from './memory';
-import { GUIDANCE_SYSTEM, SOLUTION_SYSTEM, guidanceText, parseGuidance, releaseAllowed, SolutionRequest } from './pedagogy';
+import { GUIDANCE_SYSTEM, SOLUTION_SYSTEM, guidanceText, releaseAllowed, SolutionRequest, planGuidance, GuidanceProgress } from './pedagogy';
+import { resolveGuidance } from './recovery';
 
 class SaiNiiView implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private working = false;
   private history: ChatMessage[] = [];
   private memory: LearnerMemory;
+  /** Short-lived per-file conversation progress; never grants solution permissions. */
+  private progress = new Map<string, GuidanceProgress>();
   constructor(private readonly context: vscode.ExtensionContext) {
     this.memory = new LearnerMemory(context.globalState);
   }
@@ -55,23 +58,50 @@ class SaiNiiView implements vscode.WebviewViewProvider {
     this.working = true;
     this.send('busy', { value: true });
     try {
-      const current = await snapshot();
+      const recentFocus = this.history.slice(-4).map(item => item.content).join(' ');
+      const current = await snapshot(`${text} ${recentFocus}`);
       if (!current) {
         this.send('error', { text: 'Abra um arquivo de texto permitido dentro de um projeto local. Arquivos de segredo e pastas geradas são bloqueados.' });
         return;
       }
       const system = unlock ? SOLUTION_SYSTEM : GUIDANCE_SYSTEM;
+      const progressKey = `${current.project}::${current.file}`;
+      const previous = this.progress.get(progressKey);
+      const plan = unlock ? null : planGuidance(text, previous);
       const notes = this.memory.read().filter(n => n.project === current.project).slice(-6);
       const memorySummary = notes.map(n => `- ${n.type}: ${n.topic}`).join('\n');
+      // The CURRENT request goes last, after potentially long source context, to avoid burying it.
       const contextualPrompt = [
-        `Pedido do aluno: ${text.slice(0, 1800)}`,
-        evidence ? `Tentativa relatada: ${evidence.attempt.slice(0, 1200)}\nBloqueio relatado: ${evidence.blocker.slice(0, 1200)}` : '',
         `Notas pedagógicas locais (não são notas de prova):\n${memorySummary || '(nenhuma)'}`,
-        `<contexto_nao_confiavel>\n${current.content}\n</contexto_nao_confiavel>`
+        `<contexto_nao_confiavel>\n${current.content}\n</contexto_nao_confiavel>`,
+        evidence ? `Tentativa relatada: ${evidence.attempt.slice(0, 1200)}\nBloqueio relatado: ${evidence.blocker.slice(0, 1200)}` : '',
+        `PEDIDO ATUAL DO ALUNO (PRIORIDADE): ${text.slice(0, 1800)}`,
+        plan?.instruction ?? ''
       ].filter(Boolean).join('\n\n');
       const messages: ChatMessage[] = [{ role: 'system', content: system }, ...this.history.slice(-6), { role: 'user', content: contextualPrompt }];
-      const raw = await complete(messages, unlock);
-      const answer = unlock ? raw.trim().slice(0, 7000) : guidanceText(parseGuidance(raw));
+      // A model can produce malformed/repetitive output even with JSON mode. Never
+      // make the learner responsible for retrying an identical question.
+      let answer: string;
+      if (unlock) {
+        answer = (await complete(messages, true)).trim().slice(0, 7000);
+      } else {
+        const outcome = await resolveGuidance({
+          messages,
+          generate: requestMessages => complete(requestMessages, false, Boolean(plan!.needsHelp)),
+          plan: plan!,
+          previous,
+          sourceContext: current.content,
+          learnerText: text,
+          topicContext: recentFocus
+        });
+        const guidance = outcome.guide;
+        answer = guidanceText(guidance, plan!.needsHelp);
+        this.progress.set(progressKey, {
+          question: guidance.question,
+          observation: plan!.needsHelp ? (guidance.hint ?? guidance.observation) : guidance.observation,
+          helpLevel: plan!.helpLevel
+        });
+      }
       this.history.push({ role: 'user', content: text.slice(0, 1800) }, { role: 'assistant', content: answer });
       this.history = this.history.slice(-12);
       await this.memory.remember(current.project, text.replace(/\s+/g, ' ').slice(0, 180), unlock ? 'solution' : 'question');
@@ -105,6 +135,7 @@ class SaiNiiView implements vscode.WebviewViewProvider {
     if (confirmation !== 'Apagar') return;
     await this.memory.clear();
     this.history = [];
+    this.progress.clear();
     this.send('memory', { text: 'Memória local apagada.' });
   }
 

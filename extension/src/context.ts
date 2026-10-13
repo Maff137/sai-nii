@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { bounded } from './pedagogy';
+import { focusedSource } from './focus';
 
 const execFileAsync = promisify(execFile);
 const FOLDER_EXCLUDE = new Set(['.git', '.ssh', '.aws', '.azure', '.gnupg', 'node_modules', '.venv', 'venv', 'dist', 'build', 'coverage', '.next', '__pycache__']);
@@ -34,7 +35,7 @@ async function git(root: string, args: string[]): Promise<string> {
 export type Snapshot = { project: string; file: string; content: string };
 
 /** Read-only, bounded editor snapshot. Never reads .env/keys or generated directories. */
-export async function snapshot(): Promise<Snapshot | null> {
+export async function snapshot(learnerContext = ''): Promise<Snapshot | null> {
   if (!vscode.workspace.isTrusted) return null;
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.uri.scheme !== 'file') return null;
@@ -43,7 +44,8 @@ export async function snapshot(): Promise<Snapshot | null> {
   const rel = path.relative(folder.uri.fsPath, editor.document.uri.fsPath).replaceAll('\\', '/');
   if (!allowedRelativePath(rel)) return null;
   const selection = editor.selection.isEmpty ? '' : bounded(editor.document.getText(editor.selection), 6000);
-  const fileText = bounded(editor.document.getText(), 10500);
+  const fullText = editor.document.getText();
+  const fileText = focusedSource(fullText, learnerContext, editor.document.offsetAt(editor.selection.active));
   const diagnostics = vscode.languages.getDiagnostics(editor.document.uri).slice(0, 12).map(d =>
     `L${d.range.start.line + 1}: ${bounded(d.message.replace(/\s+/g, ' '), 210)}`
   );
@@ -59,11 +61,11 @@ export async function snapshot(): Promise<Snapshot | null> {
     `Projeto: ${folder.name}`,
     `Arquivo: ${rel} | Linguagem VS Code: ${editor.document.languageId}`,
     `Trecho selecionado (se houver):\n${selection || '(nenhum)'}`,
-    `Conteúdo do editor (inclui alterações não salvas):\n${fileText}`,
+    `Trecho prioritário do editor (com números de linha, inclui alterações não salvas):\n${fileText}`,
     `Diagnósticos atuais:\n${diagnostics.join('\n') || '(nenhum)'}`,
     `Caminhos de arquivos do workspace:\n${paths.join('\n') || '(não disponível)'}`,
     `Git status (somente nomes filtrados):\n${gitStatus || '(limpo/indisponível)'}`,
-    `Git diff do arquivo aberto:\n${bounded(activeDiff, 4400) || '(nenhum)'}`,
+    `Git diff do arquivo aberto:\n${bounded(activeDiff, 1500) || '(nenhum)'}`,
     `Últimos commits locais:\n${bounded(recentCommits, 500) || '(indisponível)'}`
   ].join('\n\n');
   return { project: folder.name, file: rel, content: body };

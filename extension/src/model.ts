@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
 /** Only local loopback is reachable; no arbitrary URL/API key can be configured. */
-export async function complete(messages: ChatMessage[], unlocked = false): Promise<string> {
+export async function complete(messages: ChatMessage[], unlocked = false, requireHint = false): Promise<string> {
   const config = vscode.workspace.getConfiguration('sainii');
   const port = config.get<number>('serverPort', 8080);
   const model = config.get<string>('model', 'local');
@@ -15,7 +15,29 @@ export async function complete(messages: ChatMessage[], unlocked = false): Promi
       method: 'POST',
       signal: controller.signal,
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model, messages, temperature: 0.25, max_tokens: unlocked ? 900 : 260, stream: false })
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.2,
+        max_tokens: unlocked ? 900 : 380,
+        stream: false,
+        ...(unlocked ? {} : {
+          // llama.cpp's JSON grammar prevents plain-text replies from reaching the parser.
+          response_format: {
+            type: 'json_object',
+            schema: {
+              type: 'object',
+              properties: {
+                observation: { type: 'string', minLength: 1, maxLength: 230 },
+                question: { type: 'string', minLength: 2, maxLength: 180 },
+                hint: { type: 'string', maxLength: 230, ...(requireHint ? { minLength: 1 } : {}) }
+              },
+              required: ['observation', 'question', 'hint'],
+              additionalProperties: false
+            }
+          }
+        })
+      })
     });
     if (!response.ok) throw new Error(`Servidor local respondeu HTTP ${response.status}.`);
     const data: unknown = await response.json();
