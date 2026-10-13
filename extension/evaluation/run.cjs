@@ -7,7 +7,7 @@ const { parseArgs } = require('node:util');
 function parseOptions(argv) {
   const { values } = parseArgs({ args: argv, options: {
     limit: { type: 'string' }, case: { type: 'string' }, port: { type: 'string' }, model: { type: 'string' },
-    'show-answers': { type: 'boolean' }, help: { type: 'boolean' }
+    'show-answers': { type: 'boolean' }, 'show-rubric': { type: 'boolean' }, help: { type: 'boolean' }
   }, strict: true });
   if (values.help) return { help: true };
   const port = values.port === undefined ? 8080 : Number(values.port);
@@ -17,7 +17,7 @@ function parseOptions(argv) {
   if (values.model !== undefined && (!/^[\w./:-]{1,120}$/.test(values.model))) throw new Error('Identificador de modelo inválido.');
   const selected = values.case ? scenarios.filter(x => x.id === values.case) : scenarios.slice(0, limit);
   if (!selected.length) throw new Error(`Caso inexistente. Disponíveis: ${scenarios.map(s => s.id).join(', ')}`);
-  return { port, model: values.model ?? 'local', selected, includeAnswers: Boolean(values['show-answers']) };
+  return { port, model: values.model ?? 'local', selected, includeAnswers: Boolean(values['show-answers']), includeRubric: Boolean(values['show-rubric']) };
 }
 
 function localGenerator(port, model) {
@@ -44,8 +44,8 @@ function localGenerator(port, model) {
 async function main(argv) {
   const options = parseOptions(argv);
   if (options.help) {
-    console.log('Uso: npm run evaluate:local -- [--limit 3] [--case pt-git] [--port 8080] [--model local] [--show-answers]');
-    console.log('Padrão: 3 cenários sintéticos. Execute --limit 6 para incluir inglês experimental.');
+    console.log('Uso: npm run evaluate:local -- [--limit 3] [--case pt-git] [--port 8080] [--model local] [--show-answers] [--show-rubric]');
+    console.log('Padrão: 3 cenários sintéticos. Execute --limit 9 para cenários adicionais, incluindo inglês experimental.');
     return;
   }
   const generate = localGenerator(options.port, options.model);
@@ -56,12 +56,14 @@ async function main(argv) {
     const report = await evaluateScenario(scenario, generate, options);
     reports.push(report);
     for (const turn of report.turns) {
-      console.log(`  Etapa ${turn.turn}: origem=${turn.origin}; tempo=${(turn.elapsed_ms / 1000).toFixed(1)}s; cobertura=${turn.signal_groups_matched ?? 'n/a'}/${turn.signal_groups_total}; sinal_idioma=${turn.language_note}; alertas=${turn.rejected.map(r => r.reason).join(',') || 'nenhum'}`);
+      console.log(`  Etapa ${turn.turn}: origem=${turn.origin}; tempo=${(turn.elapsed_ms / 1000).toFixed(1)}s; cobertura=${turn.signal_groups_matched ?? 'n/a'}/${turn.signal_groups_total}; sinal_idioma=${turn.language_note}; alertas=${turn.rejected.map(r => r.reason).join(',') || 'nenhum'}; revisao_tecnica=${turn.technical_review_flags.join(',') || 'nenhuma'}`);
+      if (turn.human_review_rubric?.length) console.log(`  CRITÉRIOS PARA REVISÃO HUMANA (não avaliados automaticamente):\n${turn.human_review_rubric.map(t => `    - ${t}`).join('\n')}`);
       if (turn.answer !== undefined) console.log(`  RESPOSTA (exibição explicitamente solicitada):\n${turn.answer}\n`);
     }
   }
   console.log('\nResumo dos indicadores (NÃO medem veracidade ou qualidade pedagógica):');
   console.log(JSON.stringify(summarizeReport(reports), null, 2));
+  console.log('Alertas técnicos são apenas marcadores de revisão, não provas de erro. --show-rubric exibe critérios humanos sem imprimir respostas.');
   console.log('Revisão humana é necessária para verificar exatidão técnica, clareza e adequação ao aluno.');
 }
 

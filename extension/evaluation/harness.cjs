@@ -2,6 +2,7 @@
 const { resolveDiscussion, DISCUSSION_SYSTEM } = require('../dist/discussion.js');
 const { informalInterpretation } = require('../dist/informal.js');
 const { performance } = require('node:perf_hooks');
+const { technicalReview, rubricFor } = require('./technical-review.cjs');
 
 /** A small set of observable indicators. None proves semantic correctness or teaching quality. */
 function roughLanguage(answer, expected) {
@@ -56,7 +57,11 @@ async function evaluateScenario(scenario, generate, options = {}) {
     });
     const elapsedMs = Math.round(performance.now() - start);
     const evaluation = indicators(outcome.text, turn, scenario.language);
-    turns.push({ turn: index + 1, origin: outcome.origin, elapsed_ms: elapsedMs, rejected: rejectionReasons, ...evaluation, ...(options.includeAnswers ? { answer: outcome.text } : {}) });
+    const technicalAlerts = technicalReview(outcome.text, turn);
+    turns.push({ turn: index + 1, origin: outcome.origin, elapsed_ms: elapsedMs, rejected: rejectionReasons, ...evaluation,
+      technical_review_flags: technicalAlerts,
+      ...(options.includeRubric ? { human_review_rubric: rubricFor(turn) } : {}),
+      ...(options.includeAnswers ? { answer: outcome.text } : {}) });
     if (outcome.origin !== 'fallback') {
       history.push({ role: 'user', content: turn.prompt }, { role: 'assistant', content: outcome.text });
     }
@@ -74,6 +79,8 @@ function summarizeReport(results) {
     fallbacks: turns.filter(t => t.origin === 'fallback').length,
     potential_relevance_gaps: turns.filter(t => t.review_recommended).length,
     potential_language_mismatches: turns.filter(t => t.language_note.startsWith('possible_')).length,
+    technical_review_flags: turns.reduce((acc, turn) => acc + turn.technical_review_flags.length, 0),
+    turns_for_technical_review: turns.filter(turn => turn.technical_review_flags.length > 0).length,
     total_elapsed_seconds: Math.round(turns.reduce((acc, turn) => acc + turn.elapsed_ms, 0) / 1000)
   };
 }

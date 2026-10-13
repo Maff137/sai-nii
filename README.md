@@ -58,3 +58,14 @@ A interface exibe um subconjunto de Markdown (títulos, negrito, itálico, lista
 ## Evaluation harness (v0.2.6 candidate)
 
 Run `cd extension && npm run evaluate:check` for deterministic harness tests without a model. With an existing `llama-server` running locally, `npm run evaluate:local` runs three synthetic scenarios (natural PT-BR questions and follow-ups) against the local model. The optional English scenario is experimental: `npm run evaluate:local -- --case en-encapsulation`. Only aggregate indicators are printed by default. See `docs/DEVELOPMENT.md` for limitations and privacy constraints.
+
+## Technical review probes (v0.2.7 candidate)
+
+The offline evaluation harness can test how the tutor handles **incorrect assumptions**, rather than just measuring word coverage. For example:
+
+```shell
+cd extension
+npm run evaluate:local -- --case pt-modulos-premissa --show-rubric --show-answers
+```
+
+These flags are **not an automated fact checker**; any flagged or unflagged answer still needs human evaluation. No rubric is passed to the model, and answers are not printed unless requested. Details: `docs/DEVELOPMENT.md`.

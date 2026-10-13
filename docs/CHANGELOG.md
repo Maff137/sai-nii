@@ -1,3 +1,21 @@
+## 0.2.7 (refinement — distinguish related technical concepts)
+
+- Follow real-device review: Qwen correctly rejected automatic parallelism from source modules but overgeneralized about JavaScript thread limits and mandatory synchronization. These claims require precise conditions.
+- Add general teaching guidance to distinguish concepts and execution environments, avoid categorical statements without evidence, and prefer accurate concise explanations to unsupported enumerations.
+- Add synthetic misconception conversations about Web Workers/Worker Threads versus single-threaded execution, async/await versus CPU parallelism, and optional synchronization for independent tasks.
+- Human-readable criteria and watch terms remain review indicators only; the benchmark does not certify factual correctness or grade learners.
+- No change to network permissions, privacy, automatic code editing, or default benchmark length.
+
+## 0.2.7 (candidate — technical-review probes and misconception handling)
+
+- The offline benchmark now has synthetic misconception probes (code modularity does not automatically cause parallelism; `git commit` does not publish to GitHub), plus an experimental English probe.
+- Each scenario may specify reviewer-only guidance, watch terms and an expected indication that a false premise was challenged. These are **review triggers**, not fact-checking results or student grades.
+- `--show-rubric` prints human-facing review criteria without showing model answers. No reference answers or review rubrics are included in model prompts, and answers remain hidden by default.
+- Results separately count technical-review flags versus relevance, language and response-origin indicators. Existing three-scenario default remains unchanged.
+- The conversational system prompt more explicitly corrects false premises and distinguishes causal guarantees from possible benefits. No code editing, background analysis, new network destination or model dependency.
+- Tests cover the previously observed modularization/parallelism explanation, false positives, Git `commit` vs `push`, opt-in output and evaluator privacy.
+- No automated method here proves semantic correctness; full VS Code compile/integration and real-Qwen behavior require validation on the developer's machine.
+
 ## 0.2.6 (patch — evaluation and project-tree classifier)
 
 - Fix architecture overview in VS Code Extension Host: unify request recognition with the retrieval decision so the user's informal question about organized project files loads a bounded folder tree.

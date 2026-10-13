@@ -91,3 +91,21 @@ The suite shares the real conceptual dialogue policy (`discussion.ts`) and infor
 The command never installs a model and never uses cloud services; it only connects to loopback `127.0.0.1`.
 
 Future optional language analysis packs are described in `docs/FUTURE_LANGUAGE_PACKS.md` (design note only).
+
+## v0.2.7 — Technical review and misconception probes
+
+The optional benchmark has three new synthetic cases, beyond its three default scenarios:
+
+```shell
+cd extension
+npm run evaluate:check
+npm run evaluate:local -- --case pt-modulos-premissa --show-answers --show-rubric
+npm run evaluate:local -- --case pt-commit-premissa --show-answers --show-rubric
+npm run evaluate:local -- --case en-modules-premise --show-answers --show-rubric
+```
+
+`--show-answers` deliberately prints generated **synthetic** answers to the terminal, while `--show-rubric` prints a separate human review checklist. Neither is sent to the model as hidden reference text. `--limit 9` runs all fixtures, including exploratory English tests (more local compute time). The default remains three scenarios.
+
+`technical_review_flags` count *review triggers*, not confirmed mistakes. A correct explanation of parallelism may still be flagged simply because it mentions that concept, and a model can produce a misleading explanation without triggering any alert. `premise_challenge_not_observed` means a narrow cue for disagreeing with a false premise was not found; paraphrases may cause false alerts. Read the answer and checklist together before changing prompts or declaring correctness. No benchmark output is a measure of student proficiency.
+
+This harness uses fictional questions only, does not scan files, stores no answers and sends requests only to a local loopback model. The extension itself retains its existing read-only and user-invoked boundaries. GUI integration (`npm run test:integration`) and real-model checks must run on the developer's VS Code machine.
