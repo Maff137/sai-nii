@@ -1,12 +1,13 @@
-import { LearnerLanguage } from './language';
+import { LearnerLanguage, detectLearnerLanguage } from './language';
 import { Guidance, GuidancePlan, GuidanceProgress, parseGuidance, repeatsExplanation, repeatsQuestion } from './pedagogy';
 import { architectureIntent } from './architecture';
+import { requestsImplementation } from './routing';
 
 /** Pure, testable orchestration. The model may propose a hint; the app decides whether it can be shown. */
 type Message = { role: 'system' | 'user' | 'assistant'; content: string };
 type Generate = (messages: Message[]) => Promise<string>;
 
-export type GuidanceOutcome = { guide: Guidance; recovered: boolean; origin: 'model' | 'retry' | 'fallback'; rejectionReason?: string };
+export type GuidanceOutcome = { guide: Guidance; recovered: boolean; origin: 'model' | 'retry' | 'fallback'; rejectionReason?: string; rejections?: Array<{ attempt: number; reason: string }>; questionNarrowed?: boolean };
 
 type Inputs = {
   messages: Message[];
@@ -20,14 +21,44 @@ type Inputs = {
   language?: LearnerLanguage;
 };
 
-function rejectionReason(raw: string, plan: GuidancePlan, previous?: GuidanceProgress, observationLimit = 230): { guide?: Guidance; reason?: string } {
-  const guide = parseGuidance(raw, plan.needsHelp, observationLimit);
+/** Preserve the first useful question if a model placed multiple questions in a
+ * single JSON field. Everything retained still passes the normal safety parser;
+ * unsafe observations and code cannot be made acceptable by this transform.
+ */
+function narrowQuestions(raw: string, requireHint: boolean, observationLimit: number): Guidance | undefined {
+  const text = raw.trim().replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/, '').trim();
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { return undefined; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+  const record = parsed as Record<string, unknown>;
+  if (typeof record.question !== 'string') return undefined;
+  const first = record.question.indexOf('?');
+  if (first < 1 || first === record.question.trimEnd().length - 1) return undefined;
+  const shortened = { ...record, question: record.question.slice(0, first + 1).trim() };
+  return parseGuidance(JSON.stringify(shortened), requireHint, observationLimit) ?? undefined;
+}
+
+function rejectionReason(raw: string, plan: GuidancePlan, previous?: GuidanceProgress, observationLimit = 230, language?: LearnerLanguage): { guide?: Guidance; reason?: string; questionNarrowed?: boolean } {
+  const strict = parseGuidance(raw, plan.needsHelp, observationLimit);
+  const guide = strict ?? narrowQuestions(raw, plan.needsHelp, observationLimit);
   if (!guide) return { reason: 'formato inválido, conteúdo inseguro ou pista ausente' };
-  if (repeatsQuestion(previous?.question, guide.question)) return { reason: 'pergunta semelhante à anterior' };
-  if (plan.needsHelp && repeatsExplanation(previous?.observation, guide.hint ?? '')) {
+  // Source code identifiers are excluded by the language detector when in
+  // backticks; an undecidable short answer is left alone rather than rejected.
+  const detected = detectLearnerLanguage([guide.observation, guide.hint ?? '', guide.question].join(' '));
+  if (language && detected && detected !== language) return { reason: 'idioma da resposta não corresponde ao pedido' };
+  if (plan.needsHelp && (repeatsExplanation(previous?.observation, guide.hint ?? '') ||
+      repeatsExplanation(guide.observation, guide.hint ?? ''))) {
     return { reason: 'pista semelhante à explicação anterior' };
   }
-  return { guide };
+  if (repeatsQuestion(previous?.question, guide.question)) {
+    // In hint mode, a NEW useful hint is enough. Repeating the accompanying
+    // question should not discard the hint and cause an unrelated fallback.
+    if (plan.needsHelp && guide.hint) {
+      return { guide: { ...guide, question: '' }, questionNarrowed: true };
+    }
+    return { reason: 'pergunta semelhante à anterior' };
+  }
+  return { guide, questionNarrowed: !strict };
 }
 
 function presentIdentifier(name: string, sourceContext: string): boolean {
@@ -38,7 +69,7 @@ function presentIdentifier(name: string, sourceContext: string): boolean {
 
 function selectedIdentifier(sourceContext: string, topicContext: string): string | undefined {
   const candidates = topicContext.match(/[A-Za-z_$][A-Za-z\d_$]{2,48}/g) ?? [];
-  // Prefer names actually invoked in the source, not programming vocabulary from the user.
+  // Prefer names that occur in source call-like syntax (calls or declarations).
   return candidates.find(name => presentIdentifier(name, sourceContext));
 }
 
@@ -51,7 +82,8 @@ export function rescueGuidance(
   sourceContext: string,
   topicContext: string,
   plan: GuidancePlan,
-  previous?: GuidanceProgress
+  previous?: GuidanceProgress,
+  learnerText = topicContext
 ): Guidance {
   if (architectureIntent(topicContext)) {
     return {
@@ -60,8 +92,29 @@ export function rescueGuidance(
     };
   }
   const symbol = selectedIdentifier(sourceContext, topicContext);
+  // A definition is not a call: don't teach students to find call arguments
+  // where only a function declaration exists in the inspected source.
+  const definition = symbol && new RegExp(`\\b(?:def|function|fn|func)\\s+${symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\(`).test(sourceContext);
   const level = plan.needsHelp ? Math.max(1, plan.helpLevel) : 0;
-  const stages: Guidance[] = symbol === 'setInterval' ? [
+  if (requestsImplementation(learnerText)) {
+    return { observation: 'Posso orientar a alteração por etapas, sem escrever a função pronta.',
+      question: previous?.question === 'Qual comportamento da função atual precisa mudar primeiro?'
+        ? 'Em qual condição ou retorno do código atual você pretende começar?'
+        : 'Qual comportamento da função atual precisa mudar primeiro?' };
+  }
+  const stages: Guidance[] = definition ? [
+    { observation: `Vamos examinar a definição de \`${symbol}\` no arquivo, sem pressupor que ela foi chamada.`,
+      question: 'Quais dados entram nessa função pelos parâmetros?' },
+    { observation: 'Concentre-se nas primeiras linhas do corpo da função.',
+      hint: `Na definição de \`${symbol}\`, identifique a primeira operação feita com os parâmetros, antes de analisar todo o retorno.`,
+      question: 'Que operação aparece antes da condição?' },
+    { observation: 'Agora siga apenas um caminho da condição.',
+      hint: 'Observe o teste da condição e identifique qual operação só acontece quando ele é verdadeiro.',
+      question: 'O que acontece quando a condição é falsa?' },
+    { observation: 'Relacione a entrada ao retorno sem escrever uma implementação.',
+      hint: 'Trace um único valor hipotético pelos ramos já existentes, até a expressão de retorno.',
+      question: '' }
+  ] : symbol === 'setInterval' ? [
     {
       observation: 'Vamos olhar a estrutura da chamada `setInterval` no arquivo, sem tentar entender todo o bloco ainda.',
       question: 'O que você identifica dentro dos parênteses dessa chamada?'
@@ -136,15 +189,16 @@ export function rescueGuidance(
 /** Two attempts, then an immediately useful, grounded and safe hint instead of a dead-end error. */
 export async function resolveGuidance(input: Inputs): Promise<GuidanceOutcome> {
   let response = await input.generate(input.messages);
-  let checked = rejectionReason(response, input.plan, input.previous, input.observationLimit);
-  if (checked.guide) return { guide: checked.guide, recovered: false, origin: 'model' };
+  let checked = rejectionReason(response, input.plan, input.previous, input.observationLimit, input.language);
+  if (checked.guide) return { guide: checked.guide, recovered: false, origin: 'model', questionNarrowed: checked.questionNarrowed };
   const firstReason = checked.reason;
+  const rejections = [{ attempt: 1, reason: firstReason ?? 'resposta inválida' }];
   const correction: Message[] = [
     ...input.messages,
     { role: 'assistant', content: response.slice(0, 1200) },
     { role: 'user', content: input.language === 'en'
         ? `Previous reply was rejected (${firstReason}). Produce ONLY JSON with observation, hint and question IN ENGLISH. ` +
-          `Help the learner reason about the actual code without a complete solution. If they are stuck, give ONE new concrete hint. ` +
+          `Help the learner reason about the actual code without a complete solution. Write the observation, hint, and question IN ENGLISH, not Portuguese. At most ONE question. If they are stuck, give ONE new concrete hint. ` +
           `Do not repeat this previous question: ${JSON.stringify(input.previous?.question ?? '')}.`
         : `Sua última saída foi rejeitada (${firstReason}). Gere SOMENTE JSON com observation, hint e question. ` +
           `O aluno quer raciocinar sobre seu código, não receber a resposta pronta. ` +
@@ -152,15 +206,16 @@ export async function resolveGuidance(input: Inputs): Promise<GuidanceOutcome> {
           `Não repita: ${JSON.stringify(input.previous?.question ?? '')}.` }
   ];
   response = await input.generate(correction);
-  checked = rejectionReason(response, input.plan, input.previous, input.observationLimit);
-  if (checked.guide) return { guide: checked.guide, recovered: false, origin: 'retry' };
+  checked = rejectionReason(response, input.plan, input.previous, input.observationLimit, input.language);
+  if (checked.guide) return { guide: checked.guide, recovered: false, origin: 'retry', rejections, questionNarrowed: checked.questionNarrowed };
+  rejections.push({ attempt: 2, reason: checked.reason ?? 'resposta inválida' });
   return {
     guide: input.language === 'en'
       ? rescueEnglishGuidance(input.sourceContext, input.topicContext, input.plan)
-      : rescueGuidance(input.sourceContext, `${input.learnerText} ${input.topicContext}`, input.plan, input.previous),
+      : rescueGuidance(input.sourceContext, `${input.learnerText} ${input.topicContext}`, input.plan, input.previous, input.learnerText),
     recovered: true,
     origin: 'fallback',
-    rejectionReason: checked.reason ?? firstReason
+    rejectionReason: checked.reason ?? firstReason, rejections
   };
 }
 

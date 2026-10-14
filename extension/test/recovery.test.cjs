@@ -128,3 +128,71 @@ test('architecture rescue admits uncertainty instead of pretending it knows the 
   assert.match(result.observation, /não vou inventar responsabilidades/i);
   assert.doesNotMatch(result.observation, /MVC|Clean Architecture|Microserviços/);
 });
+
+
+test('normalizes extra questions within safe JSON to the first meaningful question', async () => {
+  const first = JSON.stringify({observation:'A função recebe uma lista e um desconto.',hint:'',question:'Qual linha soma a lista? E onde o desconto é aplicado? Pode indicar ambas?' });
+  const result=await resolveGuidance({messages, generate: async()=>first,
+    plan:planGuidance('Quero entender o código'), sourceContext:source,
+    learnerText:'Quero entender o código',topicContext:'',language:'pt'});
+  assert.equal(result.origin,'model');
+  assert.equal(result.questionNarrowed,true);
+  assert.equal(result.guide.question,'Qual linha soma a lista?');
+  assert.equal(result.guide.question.match(/\?/g).length,1);
+});
+
+test('question normalization does not weaken code or hint safeguards', async () => {
+  const unsafe=JSON.stringify({observation:'```python\nprint(123)\n```',hint:'',question:'Por onde começar? E depois?' });
+  let calls=0;
+  const result=await resolveGuidance({messages,generate: async()=>{calls++;return unsafe;},
+    plan:planGuidance('Quero entender este arquivo'),sourceContext:source,
+    learnerText:'Quero entender este arquivo',topicContext:'',language:'pt'});
+  assert.equal(calls,2);
+  assert.equal(result.origin,'fallback');
+  assert.doesNotMatch(JSON.stringify(result.guide),/print\(123\)/);
+});
+
+test('Portuguese model guidance is retried when the learner requests English', async () => {
+  const wrong=JSON.stringify({observation:'Verifique a linha onde a resposta chega ao código.',hint:'Observe onde a variável guarda a resposta.',question:'Qual parte do código verifica essa resposta?' });
+  const corrected=JSON.stringify({observation:'Look at the response before parsing its body.',hint:'Inspect the response status before calling json.',question:'What does this response expose?' });
+  let calls=0;
+  const result=await resolveGuidance({messages,generate:async ()=>++calls===1?wrong:corrected,
+    plan:planGuidance('I am stuck; give me a hint.',undefined,'en'),
+    sourceContext:source,learnerText:'I am stuck; give me a hint.',topicContext:'',language:'en'});
+  assert.equal(calls,2);
+  assert.equal(result.origin,'retry');
+  assert.equal(result.rejections[0].reason,'idioma da resposta não corresponde ao pedido');
+  assert.match(result.guide.hint,/Inspect/);
+});
+
+test('conservative language detection does not reject undecidable technical fragments',async()=>{
+  const raw=JSON.stringify({observation:'Inspect `resposta` and `depositar`.',hint:'',question:''});
+  const result=await resolveGuidance({messages,generate:async()=>raw,
+    plan:planGuidance('What is the role of this identifier?',undefined,'en'),sourceContext:source,
+    learnerText:'What is the role of this identifier?',topicContext:'',language:'en'});
+  assert.equal(result.origin,'model');
+});
+
+
+test('on a blocked turn, a new hint survives a repeated question without a fallback', async () => {
+  const previous={question:'O que acontece se desconto for maior que zero?', observation:'A função recebe preços e desconto.',helpLevel:0};
+  const response=JSON.stringify({observation:'Veja os ramos desta função.',hint:'Localize a expressão do retorno e observe em qual ramo ela se encontra.',question:previous.question});
+  let calls=0;
+  const outcome=await resolveGuidance({messages,generate:async()=>{calls++;return response;},
+    plan:planGuidance('Ainda não entendi',previous),previous,sourceContext:source,
+    learnerText:'Ainda não entendi',topicContext:'calcular_total',language:'pt'});
+  assert.equal(calls,1);
+  assert.equal(outcome.origin,'model');
+  assert.equal(outcome.questionNarrowed,true);
+  assert.equal(outcome.guide.question,'');
+  assert.match(guidanceText(outcome.guide,true),/expressão do retorno/);
+});
+
+test('repeated question without a new valid hint is still rejected', async () => {
+  const previous={question:'Qual condição executa este bloco?',observation:'Concentre-se na condição do bloco.',helpLevel:0};
+  const response=JSON.stringify({observation:'Verifique a condição.',hint:'Concentre-se na condição do bloco.',question:previous.question});
+  const outcome=await resolveGuidance({messages,generate:async()=>response,
+    plan:planGuidance('Não entendi',previous),previous,sourceContext:source,
+    learnerText:'Não entendi',topicContext:'',language:'pt'});
+  assert.equal(outcome.origin,'fallback');
+});

@@ -80,7 +80,38 @@ test('architecture explanations can be longer without enabling unrestricted code
   const { parseGuidance } = require('../dist/pedagogy');
   const content = 'As pastas observadas separam responsabilidades. '.repeat(20);
   const data = JSON.stringify({ observation: content, hint: '', question: '' });
-  assert.equal(parseGuidance(data, false).observation.length, 230);
+  const shortened = parseGuidance(data, false).observation;
+  assert.ok(shortened.length <= 230);
+  assert.match(shortened, /\.$/);
+  assert.doesNotMatch(shortened, /\bAs pastas observadas separam responsabilida$/);
   assert.equal(parseGuidance(data, false, 1500).observation, content.trim());
   assert.equal(parseGuidance(JSON.stringify({observation:'function hack() {}',question:'',hint:''}), false, 1500), null);
+});
+
+
+test('never shows a partially cut word or claim as a finished explanation', () => {
+  const { parseGuidance } = require('../dist/pedagogy.js');
+  const raw = JSON.stringify({ observation: 'A função recebe preços e desconto. Ela soma os preços e aplica o desconto positivo. O resultado é retornado, garantindo que o o valor final permanece válido para o caso.', question: 'Qual condição aplica o desconto?' });
+  const guide = parseGuidance(raw, false, 125);
+  assert.ok(guide);
+  assert.equal(guide.observation, 'A função recebe preços e desconto. Ela soma os preços e aplica o desconto positivo.');
+  assert.doesNotMatch(guide.observation, /garantindo que o o/);
+});
+
+test('rejects a long explanation without a complete sentence instead of cutting mid-word', () => {
+  const raw=JSON.stringify({observation:'Uma explicação longa sem pontuação que se prolonga ' .repeat(10),question:'Qual condição aparece?'});
+  assert.equal(parseGuidance(raw, false, 100), null);
+});
+
+test('rejects executable code hidden beyond the length budget of an observation', () => {
+  const raw=JSON.stringify({observation:'Este código trabalha com valores e entradas. '.repeat(10)+'\n```python\nprint(999)\n```',question:'Qual condição aparece?'});
+  assert.equal(parseGuidance(raw,false,150),null);
+});
+
+test('retains a complete new hint when a long observation must be shortened', () => {
+  const raw=JSON.stringify({observation:'Primeira frase terminada. Segunda frase que ultrapassa o orçamento da explicação em diversos caracteres.',hint:'Procure a comparação na condição antes da alteração do estado.',question:'Onde aparece a comparação?'});
+  const guide=parseGuidance(raw,true,50);
+  assert.ok(guide);
+  assert.equal(guide.observation,'Primeira frase terminada.');
+  assert.match(guide.hint,/condição/);
 });

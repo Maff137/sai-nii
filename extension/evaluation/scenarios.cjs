@@ -167,4 +167,5 @@ const scenarios = [
     ]
   }
 ];
+scenarios.push(...require('./source-scenarios.cjs').sourceScenarios);
 module.exports = { scenarios };

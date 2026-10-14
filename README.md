@@ -1,21 +1,25 @@
-## Current candidate: v0.2.10 — Learner adaptation and example fidelity
+## Current candidate: v0.2.12 — Multi-language offline evaluation
 
-- Preserves observed examples across translations and technical follow-ups using bounded session-only context. When the learner asks to explain the SAME code, a rewritten fenced example is rejected and retried as prose; this is a literal identity check, not a semantic fact checker.
-- Uses adaptive verbosity instructions in both Portuguese and English for brief, normal and detailed explanations, without treating word count as proof of quality.
-- A new synthetic scenario `pt-en-same-example` tests continuity of a bank-account example, with human review still required. No solution authorization change.
-- The model should normally use concise explanations instead of huge code-heavy lists. All results still require full TypeScript and VS Code integration validation on the user's Mac.
+Sai-nii now offers a **source-guidance evaluation suite** with five entirely fictional snippets in **Python, JavaScript, Go, Rust, and Java**. This is separate from the existing conceptual-discussion evaluation. It exercises the same structured JSON guidance parser, progressive hint plan and safe fallback used by the VS Code extension, with a simulated open editor.
 
-# Sai-nii
+```bash
+cd extension
+npm test
+npm run test:integration
+npm run evaluate:local -- --list-cases
+npm run evaluate:local -- --case source-python --show-answers --show-rubric
+npm run evaluate:local -- --suite source --show-rubric
+```
 
-**An offline, Socratic programming tutor inside Visual Studio Code.**
+A v0.2.12 evaluation hotfix improves guided follow-up routing, distinguishes source declarations from calls in safe fallbacks, and reports per-attempt rejection reasons. For a Python failure, use `--case source-python --show-rejected` to inspect only **synthetic** rejected generations. The Java follow-up remains in guidance even when it asks *why*.
 
-Sai-nii is an open-source project focused on helping you reason about **your own code**, not writing it for you. It aims to work on macOS, Windows, and Ubuntu with local models and no account or cloud API.
+A full `--suite source` run tests all five snippets and may take several minutes on a 7B local model. Use a single `--case` for initial validation. `--suite discussion` runs the existing concept cases. Default execution still runs just three scenarios; `--limit N` selects a shorter prefix of the chosen suite. Everything runs against `127.0.0.1` and the test does **not** execute snippet code, inspect your actual workspace, access GitHub, or contact a remote server. Raw model answers and rejected attempts are only printed if explicitly requested (`--show-answers`/`--show-rejected`) and are not saved to a report.
 
-- v0.2.10: Respond to explicit beginner/experienced cues without assigning a proficiency level; when translating a lesson, retain code identifiers and do not present clipped snippets as complete code. Validate the new `pt-level-and-code` scenario using the local Qwen model.
+**Important:** The suite measures observable signals, retries, routing, language and safe JSON structure. It does **not** establish whether technical claims, examples or hints are factually correct. Review the human rubric and answers for correctness. The source suite is a fixed synthetic simulation, not an end-to-end test of real files or a guarantee of protection against solution leakage.
 
 ## Development status
 
-**Pre-alpha v0.2.10 (developer preview).** The current extension provides a sidebar, reads bounded context from the active file and local Git repository, calls an *already running* `llama.cpp` OpenAI-compatible server on loopback, and implements an initial solution-release gate and a local, project-scoped memory of learning interactions. Unlike earlier versions, Socratic questions are not mandatory on every turn. This is not yet a one-click installer, a full pedagogical engine, or a validated release. See [product specification](docs/Sai-nii_SPEC_v1.1.md) and [implementation notes](docs/DEVELOPMENT.md).
+**Pre-alpha v0.2.12 (developer preview).** The extension provides a sidebar, reads bounded context from the active file and local Git repository when relevant, calls an already running local `llama.cpp` server on loopback, and implements an initial solution-release gate and local project-scoped memory. It is not yet a one-click installer, comprehensive technical fact checker, or validated full release. See [product specification](docs/Sai-nii_SPEC_v1.1.md) and [implementation notes](docs/DEVELOPMENT.md).
 
 ## Try the development extension
 
@@ -106,3 +110,13 @@ As análises de limitações devem referir-se ao construtor e às condições pr
 ### v0.2.11 — Roteamento por intenção
 
 Dúvidas sobre conceitos seguem o professor conversacional, mesmo com um editor aberto, sem ler o arquivo por padrão. Pedidos de análise do código ou execução de uma tarefa mantêm o modo de pistas, condicionado à presença de um arquivo do projeto. Perguntas arquiteturais usam a visão da raiz. A seleção do modo é heurística conservadora, não uma análise semântica ou autorização para fornecer soluções.
+
+
+### Ajustes de avaliação v0.2.12 (revisão de pistas)
+
+O fluxo de pistas aceita uma primeira pergunta segura de um JSON com perguntas múltiplas, sem exibir as perguntas excedentes. O relatório do benchmark sinaliza `pergunta_ajustada` quando isso ocorre; respostas detectadas claramente em idioma diferente do solicitado são rejeitadas e reformuladas. Estas regras não avaliam automaticamente a veracidade da explicação, e nenhum arquivo é modificado pelo tutor.
+
+#### v0.2.12 — resposta completa e pistas progressivas (candidato)
+- Impede cortar explicações socráticas em palavras ou frases incompletas; preserva somente frases terminadas dentro do limite, ou solicita reformulação.
+- Verifica conteúdo de código proibido antes de reduzir o tamanho da resposta, não apenas no trecho exibido.
+- Quando o aluno está bloqueado, preserva uma pista nova mesmo se a pergunta adicional repetir a anterior; a pergunta repetida não é exibida.

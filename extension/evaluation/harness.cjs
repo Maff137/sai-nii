@@ -2,7 +2,7 @@
 const { resolveDiscussion, DISCUSSION_SYSTEM, DISCUSSION_SYSTEM_EN } = require('../dist/discussion.js');
 const { informalInterpretation } = require('../dist/informal.js');
 const { performance } = require('node:perf_hooks');
-const { chooseLearnerLanguage, localizedSystem } = require('../dist/language.js');
+const { chooseLearnerLanguage, localizedSystem, detectLearnerLanguage } = require('../dist/language.js');
 const { technicalReview, rubricFor } = require('./technical-review.cjs');
 const { INCOMPLETE_GENERATION } = require('../dist/generation.js');
 const { compactDiscussionHistory, dialogueInstruction, observedIdentifierInstruction } = require('../dist/dialogue.js');
@@ -10,6 +10,9 @@ const { routeTurn } = require('../dist/routing.js');
 
 /** A small set of observable indicators. None proves semantic correctness or teaching quality. */
 function roughLanguage(answer, expected) {
+  // Same conservative language detector as the live guidance validator.
+  const detected = detectLearnerLanguage(answer);
+  if (detected && detected !== expected) return expected === 'en' ? 'possible_portuguese' : 'possible_english';
   // Only flag conspicuous wrong-language answers; mixed technical vocabulary is normal.
   const a = ` ${answer.toLowerCase().replace(/[^a-záàâãéêíóôõúçñ\s]/g, ' ')} `;
   const pt = (a.match(/\b(?:que|para|uma|você|isso|porque|também|quando|não|então|exemplo|dados)\b/g) || []).length;
@@ -98,8 +101,12 @@ function summarizeReport(results) {
   return {
     scenarios: results.length,
     turns: turns.length,
+    guided_source_turns: turns.filter(t => t.routing_mode === 'guidance').length,
+    progressive_hint_turns: turns.filter(t => t.needs_help === true).length,
+    implementation_requests_routed_to_guidance: turns.filter(t => t.implementation_request_in_guidance === true && t.routing_mode === 'guidance').length,
     model_first_attempt: turns.filter(t => t.origin === 'model').length,
     model_retry: turns.filter(t => t.origin === 'retry').length,
+    questions_narrowed: turns.filter(t => t.question_narrowed === true).length,
     immutable_code_reuses: turns.filter(t => t.code_reused).length,
     fallbacks: turns.filter(t => t.origin === 'fallback').length,
     potential_relevance_gaps: turns.filter(t => t.review_recommended).length,

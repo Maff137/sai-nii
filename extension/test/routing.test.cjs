@@ -47,3 +47,13 @@ test('conservative defaults and active selections',()=>{
   assert.equal(route('O que é um módulo?',{selectionActive:true}).mode,'discussion');
   assert.equal(refersToConcreteTask('Mostra um exemplo simples de encapsulamento'),false);
 });
+
+
+test('a stuck follow-up about code stays in guidance despite why/how cues',()=>{
+  for(const q of [
+    'I still do not understand why a negative count changes nothing. Give me a clue.',
+    'I do not understand why the condition is false. Can you give me a hint?',
+    'Ainda não entendi por que a condição falha. Me dá outra pista.'
+  ]) assert.equal(route(q,{previousMode:'guidance'}).mode,'guidance',q);
+  assert.equal(route('Why do classes exist?',{previousMode:'guidance'}).mode,'discussion');
+});

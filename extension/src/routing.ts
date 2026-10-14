@@ -1,5 +1,6 @@
 import { architectureIntent } from './architecture';
 import { isRephrasingRequest } from './dialogue';
+import { needsMoreHelp } from './pedagogy';
 
 /** Routing is based on the learner's intent, never only on whether an editor is open.
  * A conservative source/task request never enters the freer conceptual generator.
@@ -47,6 +48,11 @@ export function routeTurn(question: string, state: RoutingState): RoutingDecisio
   if (refersToConcreteTask(question)) return { mode: 'guidance', context: 'editor', reason: 'source' };
   if (state.previousMode && /^(?:e )?(?:por que|pq|why|como|how|e por que|e pq|and why|e como)\??$/.test(normalized(question))) {
     return { mode: state.previousMode, context: state.previousMode === 'discussion' ? 'workspace' : 'editor', reason: 'followup' };
+  }
+  // A request for another hint is a follow-up about the inspected source, even
+  // when it contains a word like 'why'. Keep this before concept routing.
+  if (state.previousMode === 'guidance' && needsMoreHelp(question)) {
+    return { mode: 'guidance', context: 'editor', reason: 'followup' };
   }
   if (routesToConcept(question)) return { mode: 'discussion', context: 'workspace', reason: 'concept' };
   if (state.previousMode && (isRephrasingRequest(question) || /^(?:e |mas |and |but |entao |so |why |por que |pq\b|how about |e se )/.test(normalized(question)))) {

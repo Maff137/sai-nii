@@ -1,3 +1,20 @@
+## v0.2.12 — Source benchmark routing and diagnostics hotfix (awaiting Mac/Qwen validation)
+
+- Preserve guided-source follow-ups when the learner says they still do not understand and asks for another hint, even when a question includes "why". This corrects the synthetic Java routing interruption without weakening the solution gate.
+- Detect source function *definitions* during deterministic fallback instead of describing every symbol as an invoked call. Implementation requests receive a safe, behavior-focused next question rather than a repeated call-arguments prompt.
+- Surface the rejection reasons for each generated guidance attempt in the local benchmark. Raw rejected text still requires `--show-rejected` and is never persisted.
+- Split source evaluation signals into separate mechanisms (e.g. Rust `Option` and borrowing). Document that status `200` is not the only successful HTTP status; flag unrelated optimization as a human-review concern.
+- Report routing/evaluator errors separately from llama-server connection errors. Mac integration and real-Qwen behavior remain unverified for this hotfix.
+
+## v0.2.12 — Cross-language evaluation and guided code review
+
+- Add a second offline benchmark path that exercises real `planGuidance` and `resolveGuidance` orchestration on **synthetic open-file snippets** in Python, JavaScript, Go, Rust and Java, rather than testing only conceptual discussions.
+- Verify learner-intent routing stays in protected guidance mode for direct implementation requests. Simulate help-level progression and English follow-ups; do not unlock solution mode from benchmark prompts.
+- Reuse the extension's JSON response schema when generating source-guidance responses with the local llama.cpp server. Default no-source-execution, no workspace reads, and no persistence of model messages.
+- Add `--suite source`, `--suite discussion`, `--list-cases` and five case IDs (`source-python`, `source-javascript`, `source-go`, `source-rust`, `source-java`). Default still tests only three scenarios; use `--case` for inexpensive real-model validation.
+- Review rubrics remain hidden from model prompts and only print with `--show-rubric`. Indicators are not fact-checking or general semantic graders; static snippets are **not** real-project integration tests.
+- No changes to production permission gates, supported model runtime, network access or local learner memory.
+
 ## v0.2.11 — Pedagogical routing
 
 - Route the learner's current intent independently of whether the editor happens to be open.
@@ -248,3 +265,14 @@
 - Teste unitário para JSON cercado por Markdown.
 
 Ainda é uma versão de desenvolvimento. Não foi validada uma conversa real com o Qwen2.5-Coder no Mac do usuário.
+
+
+#### v0.2.12 — ajuste de estabilidade das pistas (candidato)
+- Normalização segura de perguntas múltiplas em JSON, com registro explícito da normalização na avaliação.
+- Rejeição conservadora de respostas em idioma diferente do solicitado no modo de pistas.
+- Orientação para privilegiar explicações concretas e leitura estática ao abordar dúvidas sobre sintaxe.
+
+#### v0.2.12 — frases completas em orientação (candidato)
+- O limite de caracteres agora respeita fronteiras de frases completas nas observações e pistas; textos longos sem ponto de corte seguro são rejeitados para reformulação.
+- Análise de possível código de solução ocorre antes de truncar o texto recebido do modelo.
+- No modo pista, uma dica nova não é perdida porque o modelo repetiu a pergunta anterior; essa pergunta é omitida e o relatório registra o ajuste.
